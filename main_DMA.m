@@ -7,7 +7,7 @@ function [Data, s] = main_DMA(userSettingsOutside)
 %>    - Additional code by Moritz Guenthner (moritz.guenthner@tum.de)
 %>    - Additional code by Sebastian Karl (s.karl@tum.de)
 
-%> Date: 2025-09-15
+%> Date: 2025-11-12
 %>
 %> OVERVIEW:
 %>   * Performs a Degradation Mode Analysis (DMA) across checkup points (CU). 
@@ -98,7 +98,7 @@ else
     s.nCUs = 1:1:8; % e.g. 1:1:8;
 end
 
-% 4) choose whether you use pOCVs in charge or discharge direction
+% 4) Choose whether you use pOCVs in charge or discharge direction
 % set which direction for the DMA; can be 'charge' or 'discharge'
 s.direction                 = 'charge';
 if exist('userSettingsOutside','var') && ...
@@ -203,9 +203,9 @@ s.ROI_OCV_max = 1;
 s.LowerBoundaries          = [1, -1.0, 1, -1.0];
 s.UpperBoundaries          = [2.0,  0, 2.1,  0];
 
-% 13) In case your anode is blend material (e.g. silicon-graphite) set to
-% true. Assure that gammaBlend2_upperBound is not lower than actual
-% capacity share!
+% 13) Define whether your anode is blend material (e.g. silicon-graphite) -> 
+% set to true in this case. Assure that gammaBlend2_upperBound is not lower 
+% than actual capacity share!
 % Settings for using a blend model for the anode
 % Exemplary use case: Graphite-Silicon-Anode
 % -> in this case Graphite would be Blend 1 and Silicon Blend 2
@@ -231,7 +231,7 @@ s.maxAnodeGain    = 0.010; % e.g. 0.01 -> allows 1% anode gain per CU
 s.maxBlend1Gain   = 0.005; % e.g. 0.005 -> allows 0.5% Blend1 gain per CU
 s.maxBlend2Gain   = 0.010; % e.g. 0.01 -> allows 1% Blend2 gain per CU
 
-% 16) Limit maximal losses per CU (default 1.0 -> 100 % allowed per CU)
+% 16) Define maximal losses per CU (default 1.0 -> 100 % allowed per CU)
 s.maxCathodeLoss  = 1; % e.g. 0.5 -> limit cathode loss to 50% per CU
 s.maxAnodeLoss    = 1; % e.g. 0.8 -> limit anode loss to 80% per CU
 s.maxBlend1Loss   = 1; % e.g. 0.6 -> limit Blend1 loss to 60% per CU
@@ -247,7 +247,7 @@ s.plotDMAOverall        = true;    % Plot overall DMA results
 s.plotBlend2Overall     = false;    % Plot overall Blend2 content
 s.plotAllAcceptedCU     = false;   % Plot all accepted solutions (not just best)
 
-% 18) adjust path for both anode and cathode (see the next 15-20 lines);
+% 18) Adjust path for both anode and cathode (see the next 15-20 lines);
 % then your done ;) 
 
 %% -------------- LOAD anode and cathode data --------------
