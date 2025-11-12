@@ -1,93 +1,127 @@
-# Degradation Mode Analysis
+<div align="center"> <h1>DegradationModeAnalysis</h1>
+
+Degradation mode analysis tool + tool to calculate silicon OCPs
+
+<img src="doc/OCP_shift_over_SOC.gif" width="400"/>
+
+</div> <h2>🔭 Overview</h2>
+This tool allows the degradation mode analysis of lithium- and sodium-ion batteries. 
+In case of a blend anode, the silicon OCP can be selected from a pool of literature OCPS.
+We recommend, however, to calculate the silicon OCP based on a measured blend OCP, which can be
+done by a second tool designed for this purpose. 
+
+<br>
+
+<!-- In your README -->
+<div align="center"><img src="doc/flowChart.jpg?raw=1" width="600" alt="Flow chart" /></div>
+
+
+<h2>⚙️ Installation</h2> Clone the repository by running 
 
 
 
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
+```bash
+git clone git@github.com:tum-ees/degradation-mode-analysis.git
 ```
-cd existing_repo
-git remote add origin https://gitlab.lrz.de/EES/degradation-mode-analysis.git
-git branch -M main
-git push -uf origin main
-```
 
-## Integrate with your tools
+<h2>🎮 Usage</h2> Set parameters and run script in the MATLAB environment.
 
-- [ ] [Set up project integrations](https://gitlab.lrz.de/EES/degradation-mode-analysis/-/settings/integrations)
+<h4>silicon OCP generation (optional)</h4>
 
-## Collaborate with your team
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+Optional silicon OCP generation for Si–Gr blends:
+You can generate a cell specific silicon OCP from a measured 
+blend anode OCP and a graphite OCP using `generateSiCurve.m`. 
+This follows the algebraic reconstruction 
+<p><em>Q</em><sub>blend</sub> = <span style="font-style:italic;">&gamma;</span><sub>Si</sub>&middot;<em>Q</em><sub>Si</sub> + (1&minus;<span style="font-style:italic;">&gamma;</span><sub>Si</sub>)&middot;<em>Q</em><sub>Gr</sub></p>
+and is robust even when <span style="font-style:italic;">γ</span><sub>Si</sub>
+ is only roughly estimated. Filtering of the generated curve is available if you want a strictly monotonic OCP. Use this only if you have a Si–Gr blend and want to avoid mismatches from literature silicon OCPs.
 
-## Test and Deploy
+<h4>degradation mode analysis</h4> Run the DMA by calling <code>[Data, s] = main_DMA(userSettingsOutside)</code>. Set all settings in <code>DMA_main</code>. For easier use you can overwrite any field from outside by passing a struct <code>s</code> into <code>main_DMA</code>; only provided fields change while defaults remain.
 
-Use the built-in continuous integration in GitLab.
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
 
-***
+* Data handling: pOCV curves need to be stored either in one table or in different folders, set <code>s.inputIsAging_data_table</code> 
+(1 for table mode using <code>s.tableFilter</code> and <code>s.nameTableColumnOCV</code>, 0 for folder mode with RPT1, RPT2 ... or analogous naming)
 
-# Editing this README
+* Resampling: <code>s.dataLength</code> for resampling in SOC space. <code>s.smoothingPoints</code> for LOWESS smoothing of input curves.
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+* Cost function allows to use OCV, DVA and ICA in different regions; partial OCV as input implicitly possible with regions: set <code>s.weightOCV</code>, <code>s.weightDVA</code>, <code>s.weightICA</code>. Focus the fit with <code>s.ROI_OCV_min/max</code>, <code>s.ROI_DVA_min/max</code>, <code>s.ROI_ICA_min/max</code>.
 
-## Suggestions for a good README
+* Solver and run control: choose <code>s.Algorithm</code> (e.g. <code>ga</code>, <code>particleswarm</code>, <code>patternsearch</code>, <code>GlobalSearch</code>, <code>fmincon</code>, <code>lsqnonlin</code>). 
+For non-deterministic algorithms (such as <code>ga</code>) use <code>s.rmseThreshold</code>, <code>s.reqAccepted</code>, <code>s.maxTriesOverall</code>.
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+* Direction of pOCV: set <code>s.direction</code> to <code>'charge'</code> or <code>'discharge'</code>.
 
-## Name
-Choose a self-explaining name for your project.
+* Blend options: enable with <code>s.useBlend</code>; set <code>s.gammaBlend2_init</code> and <code>s.gammaBlend2_upperBound</code>.
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+* Inhomogeneity of anode and cathode estimated separately: toggle <code>s.allowAnodeInhomogeneity</code>, <code>s.allowCathodeInhomogeneity</code>; limit with <code>s.maxInhomogeneity</code>, <code>s.maxInhomogeneityDelta</code>.
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+* Constraints and order: bound changes with <code>s.maxGain</code>, <code>s.maxLoss</code>. Control fitting order via the sort of <code>s.nCUs</code> (ascending or descending).
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+<h2>💾 Content</h2>
+Detailed documentation of the modules can be found below.
+<br><br>
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+<details>
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+<summary> <h4> silicon OCP generation</h4> </summary> 
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+* folder calculateSiCurve: all necessary scripts to generate the silicon OCP
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+* <code>generateSiCurve.m</code>: script to perform the calcualation (GUI or script-based)
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+* subfolder 1_CalculateSiCurve_Helper: helper functions to run <code>generateSiCurve.m</code>
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+</details>
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
 
-## License
-For open source projects, say how it is licensed.
+<details> <summary> <h4> degradation mode analysis </h4> </summary>
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+* <code>main_DMA.m</code>: main function. All settings are in this file
+
+* <code>dma_core.m</code>: core routine that handles the main flow and all relevant steps
+
+* folder HelperFunctions: required folder with helper functions
+
+</details>
+
+<details> <summary> <h4> input data </h4> </summary>
+
+* folder InputData: literature OCPs and example data
+
+* subfolders: <code>Graphite</code>, <code>Silicon</code>, <code>LFP</code>, <code>NCA</code>, <code>NMC</code>, <code>TestData</code>
+
+These OCPs originate from published sources. Add proper citations if you use them. Check licenses and attribution requirements before redistribution
+
+</details>
+
+<h2>🎖️ Acknowledgments</h2>
+We would like to thank Johannes Natterer for providing us with a data set of a cyclic aged P45B cell of his aging study for 
+testing the tools.
+
+
+<h2>📽️ Minimal workable example</h2>
+In its current form, main_DMA serves as minimal workable example. 
+In its current form, the script performs a blend electrode fitting for a cyclic aged Molicel P45B cell. 
+The pOCV curves are stored using the table structure (<code>.\InputData\TestData\P45B_serial23_aging_data_table.mat </code>). 
+The OCP curves for the MWE are described in the accompanied publication (see Citation).
+
+
+<h2>📯 Developers</h2>
+
+* [Mathias Rehm](mailto:mathias.rehm@tum.de), Chair of Electrical Energy Storage Technology, School of Engineering and Design, Technical University of Munich, 80333 Munich, 
+Germany
+
+* [Josef Eizenhammer](mailto:josef.eizenhammer@tum.de), Chair of Electrical Energy Storage Technology, School of Engineering and Design, Technical University of Munich, 80333 Munich, 
+Germany
+* Moritz Guenthner (student research project)
+* Can Korkmaz (student research project)
+
+
+
+
+<h2>✒️ Citation</h2>
+This tool is published alongside with a open-source publication of Mathias Rehm in year 2026. In case you write any kind of publication, we kindly ask you to cite this publication. 
+Please know, that an earlier version of this tool was used and validated to precisely determine the degradation modes for commerical sodium batteries by Mathias Rehm in another publication in 2026.

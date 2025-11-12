@@ -1,0 +1,29 @@
+# Change Log
+All notable changes to Degradation Mode Analysis are documented in this file.
+
+The format is based on [Keep a Changelog](http://keepachangelog.com/)
+and this project adheres to [Semantic Versioning](http://semver.org/).
+
+## [Unreleased] on yyyy-mm-dd
+
+### Added
+* Placeholder
+
+### Changed
+* Placeholder
+
+### Fixed
+* Placeholder
+
+## [1.0.0] on 2025-11-12
+
+### Added
+* Initial public release of Degradation Mode Analysis
+* Core workflow for mode identification
+* Command line interface and basic documentation
+
+### Changed
+* None
+
+### Fixed
+* None
