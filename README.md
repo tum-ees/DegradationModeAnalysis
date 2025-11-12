@@ -24,7 +24,7 @@ done by a second tool designed for this purpose.
 git clone git@github.com:tum-ees/degradation-mode-analysis.git
 ```
 
-<h2>🎮 Usage</h2> Set parameters and run script in the MATLAB environment.
+<h2>🎮 Usage</h2> Set the parameters and run the script in the MATLAB environment.
 
 <h4>silicon OCP generation (optional)</h4>
 
