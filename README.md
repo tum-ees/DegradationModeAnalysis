@@ -13,7 +13,7 @@ done by a second tool designed for this purpose.
 <br>
 
 <!-- In your README -->
-<div align="center"><img src="doc/flowChart.jpg?raw=1" width="600" alt="Flow chart" /></div>
+<div align="center"><img src="doc/flowChart2.jpg?raw=1" width="600" alt="Flow chart" /></div>
 
 
 <h2>⚙️ Installation</h2> Clone the repository by running 
