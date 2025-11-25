@@ -1,4 +1,4 @@
-function [Data] = store_data_fields(Data, fName, sol, LAM_Anode, LAM_Cathode, LI, LAM_Anode_Blend2, LAM_Anode_Blend1)
+function [Data] = store_data_fields(Data, fName, sol, LAM_anode, LAM_cathode, LI, LAM_anode_blend2, LAM_anode_blend1, LAM_cathode_blend2, LAM_cathode_blend1)
 %> Author: Can Korkmaz (can.korkmaz@tum.de)
 %> supervised by Mathias Rehm (mathias.rehm@tum.de)
 %> Additional code by Josef Eizenhammer (josef.eizenhammer@tum.de)
@@ -24,11 +24,13 @@ function [Data] = store_data_fields(Data, fName, sol, LAM_Anode, LAM_Cathode, LI
     Data.(fName).calculated.cathU_recon  = sol.cathU_recon;
     Data.(fName).calculated.anodeSOC     = sol.anodeSOC;
     Data.(fName).calculated.anodeU_recon = sol.anodeU_recon;
-    Data.(fName).LAM_Anode               = LAM_Anode;
-    Data.(fName).LAM_Cathode             = LAM_Cathode;
+    Data.(fName).LAM_anode               = LAM_anode;
+    Data.(fName).LAM_cathode             = LAM_cathode;
     Data.(fName).LI                      = LI;
-    Data.(fName).LAM_Anode_Blend2        = LAM_Anode_Blend2;
-    Data.(fName).LAM_Anode_Blend1        = LAM_Anode_Blend1;
+    Data.(fName).LAM_anode_blend2        = LAM_anode_blend2;
+    Data.(fName).LAM_anode_blend1        = LAM_anode_blend1;
+    Data.(fName).LAM_cathode_blend2      = LAM_cathode_blend2;
+    Data.(fName).LAM_cathode_blend1      = LAM_cathode_blend1;
     Data.(fName).RMSE_fitRegion          = sol.finalRMSE_fit;
     Data.(fName).RMSE_0_9                = sol.finalRMSE_full;
     Data.(fName).RMSE_DVA                = sol.rmse_DVA_full;

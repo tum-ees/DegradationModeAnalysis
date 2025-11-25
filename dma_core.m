@@ -1,11 +1,11 @@
 function [myData, reconSOC, fcU_model, Q_DVA_meas, DVA_smooth_meas, ...
     Q_DVA_calc, DVA_smooth_calc, Q_ICA_meas, ICA_smooth_meas, ...
-    Q_ICA_calc, ICA_smooth_calc, capa_act, params, AlgorithmOut, ...
+    Q_ICA_calc, ICA_smooth_calc, capa_act, params, algorithmOut, ...
     weightOCV_Out, cathSOC, normCathode_U, anodeSOC, blendU] = ...
     dma_core(half_and_full_cell_data, settings, refData, ...
-    LAM_Anode_prev, LAM_Cathode_prev, LAM_Anode_Blend1_prev, ...
-    LAM_Anode_Blend2_prev, Inhmg_An_prev, Inhmg_Ca_prev, ...
-    allowAnodeInhomogeneity, allowCathodeInhomogeneity, fitReverse)
+        LAM_anode_prev, LAM_cathode_prev, LAM_anode_blend1_prev, ...
+        LAM_anode_blend2_prev, inhom_An_prev, inhom_Ca_prev, ...
+        allowAnodeInhomogeneity, allowCathodeInhomogeneity, fitReverse)
 %> -------------------------------------------------------------------------
 %> Author: Can Korkmaz (can.korkmaz@tum.de)
 %> supervised by Mathias Rehm (mathias.rehm@tum.de)
@@ -13,7 +13,7 @@ function [myData, reconSOC, fcU_model, Q_DVA_meas, DVA_smooth_meas, ...
 %> Additional code by Josef Eizenhammer (josef.eizenhammer@tum.de)
 %> Additional code by Moritz Guenthner (moritz.guenthner@tum.de)
 %> Additional code by Mathias Rehm (mathias.rehm@tum.de)
-
+%
 %> Date: 2025-03-11
 %
 % OVERVIEW:
@@ -34,14 +34,14 @@ function [myData, reconSOC, fcU_model, Q_DVA_meas, DVA_smooth_meas, ...
 %     - settings struct defined in main_DMA.
 %   refData
 %     - optional struct with reference capacities for penalties in
-%       objectiveWithPenalty; must include .Capa_Anode_init,
-%       .Capa_Cathode_init, .Capa_Inventory_init, and .gamma_Blend2_init.
-%   LAM_Anode_prev
+%       objectiveWithPenalty; must include .capa_anode_init,
+%       .capa_cathode_init, .capa_inventory_init, and .gamma_an_blend2_init.
+%   LAM_anode_prev
 %     - optional previous anode loss for penalties; empty disables the
 %       negative-anode penalty.
-%   LAM_Cathode_prev
-%     - optional previous cathode loss; empty disables the negative-cathode
-%       penalty.
+%   LAM_cathode_prev
+%     - optional previous cathode loss for penalties; empty disables the
+%       negative-cathode penalty.
 %   allowAnodeInhomogeneity / allowCathodeInhomogeneity
 %     - logical flags that permit inhomogeneity parameters.
 %   fitReverse
@@ -62,12 +62,12 @@ function [myData, reconSOC, fcU_model, Q_DVA_meas, DVA_smooth_meas, ...
 %     - charge grid for calculated (modeled) DVA.
 %   DVA_smooth_calc
 %     - smoothed calculated DVA array.
-%   Capa_act
+%   capa_act
 %     - actual capacity from the input data (e.g., fullCellData).
 %   params
 %     - optimised parameters [alpha_an, beta_an, alpha_cat, beta_cat,
-%       (gamma_Blend2)].
-%   AlgorithmOut
+%       (gamma_an_blend2), (gamma_ca_blend2 future), (inhom_an), (inhom_cat)].
+%   algorithmOut
 %     - echo of the chosen algorithm.
 %   weightOCV_Out
 %     - echo of the chosen OCV weight.
@@ -83,7 +83,7 @@ warning('off', 'all');
 % Get Settings from settings struct
 smoothingPoints         = settings.smoothingPoints;
 dataLength              = settings.dataLength;
-Algorithm               = settings.Algorithm;
+algorithm               = settings.algorithm;
 weightOCV               = settings.weightOCV;
 weightDVA               = settings.weightDVA;
 weightICA               = settings.weightICA;
@@ -93,42 +93,43 @@ ROI_DVA_min             = settings.ROI_DVA_min;
 ROI_DVA_max             = settings.ROI_DVA_max;
 ROI_ICA_min             = settings.ROI_ICA_min;
 ROI_ICA_max             = settings.ROI_ICA_max;
-useBlendElectrodeModel  = settings.useBlend;
+useAnodeBlendModel    = settings.useAnodeBlend;
+useCathodeBlendModel  = settings.useCathodeBlend;
 maxAnodeGain            = settings.maxAnodeGain;
 maxCathodeGain          = settings.maxCathodeGain;
-maxBlend1Gain           = settings.maxBlend1Gain;
-maxBlend2Gain           = settings.maxBlend2Gain;
+maxAnBlend1Gain         = settings.maxAnBlend1Gain;
+maxAnBlend2Gain         = settings.maxAnBlend2Gain;
 maxAnodeLoss            = settings.maxAnodeLoss;
 maxCathodeLoss          = settings.maxCathodeLoss;
-maxBlend1Loss           = settings.maxBlend1Loss;
-maxBlend2Loss           = settings.maxBlend2Loss;
-lowerBoundaries         = settings.LowerBoundaries;
-upperBoundaries         = settings.UpperBoundaries;
-gammaBlend2_upperBound  = settings.gammaBlend2_upperBound;
-capa_act                = half_and_full_cell_data.Capa_act;
+maxAnBlend1Loss         = settings.maxAnBlend1Loss;
+maxAnBlend2Loss         = settings.maxAnBlend2Loss;
+lowerBoundaries         = settings.lowerBoundaries;
+upperBoundaries         = settings.upperBoundaries;
+gammaAnBlend2_upperBound  = settings.gammaAnBlend2_upperBound;
+capa_act                = half_and_full_cell_data.capa_act;
 
 % Build per-electrode inhomogeneity limits upfront so the first CU can vary.
-inhomoUpperBoundBase = settings.maxInhomogeneity;
-if isscalar(inhomoUpperBoundBase)
-    inhomoUpperBoundBase = repmat(inhomoUpperBoundBase, 1, 2);
+inhomUpperBoundBase = settings.maxInhomogeneity;
+if isscalar(inhomUpperBoundBase)
+    inhomUpperBoundBase = repmat(inhomUpperBoundBase, 1, 2);
 else
-    inhomoUpperBoundBase = inhomoUpperBoundBase(:).';
-    if numel(inhomoUpperBoundBase) == 1
-        inhomoUpperBoundBase = repmat(inhomoUpperBoundBase, 1, 2);
+    inhomUpperBoundBase = inhomUpperBoundBase(:).';
+    if isscalar(inhomUpperBoundBase)
+        inhomUpperBoundBase = repmat(inhomUpperBoundBase, 1, 2);
     else
-        inhomoUpperBoundBase = inhomoUpperBoundBase(1:2);
+        inhomUpperBoundBase = inhomUpperBoundBase(1:2);
     end
 end
 
-inhomoDeltaPerCU = settings.maxInhomogeneityDelta;
-if isscalar(inhomoDeltaPerCU)
-    inhomoDeltaPerCU = repmat(inhomoDeltaPerCU, 1, 2);
+inhomDeltaPerCU = settings.maxInhomogeneityDelta;
+if isscalar(inhomDeltaPerCU)
+    inhomDeltaPerCU = repmat(inhomDeltaPerCU, 1, 2);
 else
-    inhomoDeltaPerCU = inhomoDeltaPerCU(:).';
-    if numel(inhomoDeltaPerCU) == 1
-        inhomoDeltaPerCU = repmat(inhomoDeltaPerCU, 1, 2);
+    inhomDeltaPerCU = inhomDeltaPerCU(:).';
+    if isscalar(inhomDeltaPerCU)
+        inhomDeltaPerCU = repmat(inhomDeltaPerCU, 1, 2);
     else
-        inhomoDeltaPerCU = inhomoDeltaPerCU(1:2);
+        inhomDeltaPerCU = inhomDeltaPerCU(1:2);
     end
 end
 
@@ -137,9 +138,9 @@ if ~exist('maxCathodeGain','var') || isempty(maxCathodeGain)
     maxCathodeGain = 0;
 end
 
-% If user did not provide LAM_Cathode_prev, default to []
-if ~exist('LAM_Cathode_prev','var')
-    LAM_Cathode_prev = [];
+% If user did not provide LAM_cathode_prev, default to []
+if ~exist('LAM_cathode_prev','var')
+    LAM_cathode_prev = [];
 end
 
 % -----------------------------------------------------------------------
@@ -147,37 +148,52 @@ end
 % -----------------------------------------------------------------------
 myData.normCathode_SOC = half_and_full_cell_data.normCathode_SOC;
 myData.normCathode_U   = half_and_full_cell_data.normCathode_U;
+myData.cathode_SOC_single = half_and_full_cell_data.cathode_SOC_single;
+myData.cathode_U_single   = half_and_full_cell_data.cathode_U_single;
 myData.Q_cell          = half_and_full_cell_data.fullCell_SOC;
 myData.OCV_cell        = half_and_full_cell_data.fullCell_U;
-myData.commonVoltage   = half_and_full_cell_data.commonVoltage;
-myData.Q_Blend2_interp = half_and_full_cell_data.Q_Blend2_interp;
-myData.Q_Blend1_interp = half_and_full_cell_data.Q_Blend1_interp;
+myData.commonVoltage_anode   = half_and_full_cell_data.commonVoltage_anode;
+myData.Q_anode_blend2_interp = half_and_full_cell_data.Q_anode_blend2_interp;
+myData.Q_anode_blend1_interp = half_and_full_cell_data.Q_anode_blend1_interp;
+myData.Q_cathode_blend2_interp = half_and_full_cell_data.Q_cathode_blend2_interp;
+myData.Q_cathode_blend1_interp = half_and_full_cell_data.Q_cathode_blend1_interp;
+myData.commonVoltage_cathode   = half_and_full_cell_data.commonVoltage_cathode;
+myData.anode_SOC_single        = half_and_full_cell_data.anode_SOC_single;
+myData.anode_U_single          = half_and_full_cell_data.anode_U_single;
+myData.useCathodeBlend         = useCathodeBlendModel;
+myData.useAnodeBlend           = useAnodeBlendModel;
 myData.Q0              = half_and_full_cell_data.Q0;
+
+% Precompute static masks and measured derivatives to avoid per-iteration recomputation
+dvaPrecomp.mask        = build_ROI_mask(myData.Q_cell, ROI_DVA_min, ROI_DVA_max);
+dvaPrecomp.measuredDVA = precompute_measured_DVA(myData.Q_cell, myData.OCV_cell, myData.Q0);
+icaPrecomp.mask        = build_ROI_mask(myData.Q_cell, ROI_ICA_min, ROI_ICA_max);
+icaPrecomp.measuredICA = precompute_measured_ICA(myData.Q_cell, myData.OCV_cell, myData.Q0);
 
 % -----------------------------------------------------------------------
 % 5) Define vectorized objective functions and run optimization
 % -----------------------------------------------------------------------
-% Sub-objectives (each must accept [N×4 or N×5], return [N×1])
-funOCV = @(X) fit_OCV_blend(X, myData, ROI_OCV_min, ROI_OCV_max);
-funDVA = @(X) fit_DVA_mae_blend(X, myData, myData.Q0, ROI_DVA_min, ROI_DVA_max);
-funICA = @(X) fit_ICA_mae_blend(X, myData, myData.Q0, ROI_ICA_min, ROI_ICA_max);
+% Sub-objectives (each must accept fixed-length 8 params, return [N×1])
+funOCV = @(X) fit_OCV(X, myData, ROI_OCV_min, ROI_OCV_max);
+funDVA = @(X) fit_DVA(X, myData, myData.Q0, ROI_DVA_min, ROI_DVA_max, dvaPrecomp);
+funICA = @(X) fit_ICA(X, myData, myData.Q0, ROI_ICA_min, ROI_ICA_max, icaPrecomp);
 
 % If reference data AND either previous anode or cathode loss are provided,
 % add a penalty. (You can adjust logic if you require both to be non-empty.)
 % After penalty decision make decision which fititing method
 % should be used via evaluating the weighting factors
 if ~isempty(refData) && ...
-        (~isempty(LAM_Anode_prev) || ~isempty(LAM_Cathode_prev))
+        (~isempty(LAM_anode_prev) || ~isempty(LAM_cathode_prev))
     % Vectorized objective with penalty
     funMulti = @(X) objectiveWithPenalty( ...
         X, myData, myData.Q0, ROI_OCV_min, ROI_OCV_max, ...
         ROI_DVA_min, ROI_DVA_max, ROI_ICA_min, ROI_ICA_max, ...
         weightOCV, weightDVA, weightICA, refData, ...
-        LAM_Anode_prev, LAM_Cathode_prev, LAM_Anode_Blend1_prev, ...
-        LAM_Anode_Blend2_prev, capa_act, useBlendElectrodeModel, ...
-        maxAnodeGain, maxCathodeGain, maxBlend1Gain, maxBlend2Gain, ...
-        maxAnodeLoss, maxCathodeLoss, maxBlend1Loss, maxBlend2Loss, ...
-        fitReverse); % 0 disallows negative cathode loss
+        LAM_anode_prev, LAM_cathode_prev, LAM_anode_blend1_prev, ...
+        LAM_anode_blend2_prev, capa_act, useAnodeBlendModel, useCathodeBlendModel, ...
+                maxAnodeGain, maxCathodeGain, maxAnBlend1Gain, maxAnBlend2Gain, ...
+                maxAnodeLoss, maxCathodeLoss, maxAnBlend1Loss, maxAnBlend2Loss, ...
+                fitReverse); % 0 disallows negative cathode loss
 else
     % No penalty: sum OCV + DVA + ICA with corresponding weights.
     % Must return Nx1, so skip mean(...).
@@ -195,60 +211,103 @@ else
     funMulti = @(X) sum(cellfun(@(f) f(X), funList));
 end
 
-% -----------------------------------------------------------------------
-% 6) Base parameters
-% -----------------------------------------------------------------------
-if useBlendElectrodeModel
-    % params = [alpha_an, beta_an, alpha_cat, beta_cat, gamma_Blend2]
-    init_params = [1.05, -0.005, 1.1, -0.01, 0.2];
-    lb          = [lowerBoundaries, 0.02];
-    ub          = [upperBoundaries, gammaBlend2_upperBound];
-else
-    % params = [alpha_an, beta_an, alpha_cat, beta_cat]
-    init_params = [1.2, 0.0, 1.1, -0.1];
-    lb          =  lowerBoundaries;
-    ub          =  upperBoundaries;
-end
+funMultiFull = funMulti;
 
 % -----------------------------------------------------------------------
-% 7) Inhomogeneity parameters (optional)
+% 6) Inhomogeneity parameters (optional)
 % -----------------------------------------------------------------------
 % Boolean mask (1 = active, 0 = inactive)
-inhomoMask = [allowAnodeInhomogeneity, allowCathodeInhomogeneity];
+inhomMask = [allowAnodeInhomogeneity, allowCathodeInhomogeneity];
 
 % Start with the global per-electrode limits; tighten only if a previous CU exists.
-maxInhomUB = inhomoUpperBoundBase;
-if isempty(Inhmg_An_prev)
-    maxInhomUB(1) = inhomoUpperBoundBase(1);    % first CU: keep full range
+maxInhomUB = inhomUpperBoundBase;
+if isempty(inhom_An_prev)
+    maxInhomUB(1) = inhomUpperBoundBase(1);    % first CU: keep full range
 else
-    maxInhomUB(1) = min(inhomoUpperBoundBase(1), ...
-        inhomoDeltaPerCU(1) + Inhmg_An_prev);
+    maxInhomUB(1) = min(inhomUpperBoundBase(1), ...
+        inhomDeltaPerCU(1) + inhom_An_prev);
 end
 
-if isempty(Inhmg_Ca_prev)
-    maxInhomUB(2) = inhomoUpperBoundBase(2);    % first CU: keep full range
+if isempty(inhom_Ca_prev)
+    maxInhomUB(2) = inhomUpperBoundBase(2);    % first CU: keep full range
 else
-    maxInhomUB(2) = min(inhomoUpperBoundBase(2), ...
-        inhomoDeltaPerCU(2) + Inhmg_Ca_prev);
+    maxInhomUB(2) = min(inhomUpperBoundBase(2), ...
+        inhomDeltaPerCU(2) + inhom_Ca_prev);
 end
 
 % Initial values, lower/upper bounds
-inhomoInit = 0.03       * inhomoMask;        % [0.02 0.02] or [0.02 0] ...
-inhomoLB   = 0          * inhomoMask;        % [0 0] or [0 0]
-inhomoUB   = maxInhomUB .* inhomoMask;       % [max max] or [max 0]
-inhomoInit = min(inhomoInit, inhomoUB);      % clamp initial guess inside bounds
+inhomInit = 0.03       * inhomMask;        % [0.02 0.02] or [0.02 0] ...
+inhomLB   = 0          * inhomMask;        % [0 0] or [0 0]
+inhomUB   = maxInhomUB .* inhomMask;       % [max max] or [max 0]
+inhomInit = min(inhomInit, inhomUB);      % clamp initial guess inside bounds
 
 % -----------------------------------------------------------------------
-% 8) Concatenate vectors 
+% 7) Build full 8 parameter vectors, then reduce to active subset
 % -----------------------------------------------------------------------
-if any(inhomoMask)
-    init_params = [init_params, inhomoInit];
-    lb          = [lb,          inhomoLB];
-    ub          = [ub,          inhomoUB];
+% Full fixed order:
+% [alpha_an, beta_an, alpha_cat, beta_cat, gamma_an_blend2, gamma_ca_blend2, inhom_an, inhom_ca]
+% gamma_ca_blend2 (slot 6) is reserved for a future cathode blend release.
+
+fullInit = zeros(1, 8);
+fullLB   = zeros(1, 8);
+fullUB   = zeros(1, 8);
+
+% Base 4 parameters always exist
+if useAnodeBlendModel
+    baseInit = [1.05, -0.005, 1.1, -0.01];
+else
+    baseInit = [1.2, 0.0, 1.1, -0.1];
 end
 
+fullInit(1:4) = baseInit;
+fullLB(1:4)   = lowerBoundaries;
+fullUB(1:4)   = upperBoundaries;
+
+% Anode gamma slot is only active if blend model is used
+if useAnodeBlendModel
+    fullInit(5) = 0.2;
+    fullLB(5)   = 0.02;
+    fullUB(5)   = gammaAnBlend2_upperBound;
+else
+    fullInit(5) = 0;
+    fullLB(5)   = 0;
+    fullUB(5)   = 0;
+end
+
+% Cathode gamma (Blend2) if enabled
+if useCathodeBlendModel
+    fullInit(6) = 0.2;
+    fullLB(6)   = 0.02;
+    fullUB(6)   = settings.gammaCaBlend2_upperBound;
+else
+    fullInit(6) = 0;
+    fullLB(6)   = 0;
+    fullUB(6)   = 0;
+end
+
+% Inhomogeneity slots (already masked)
+fullInit(7:8) = inhomInit;
+fullLB(7:8)   = inhomLB;
+fullUB(7:8)   = inhomUB;
+
+% Active mask and reduced vectors for the solver
+activeMask = [true true true true useAnodeBlendModel useCathodeBlendModel ...
+    allowAnodeInhomogeneity allowCathodeInhomogeneity];
+freeIdx = find(activeMask);
+
+init_params = fullInit(freeIdx);
+lb          = fullLB(freeIdx);
+ub          = fullUB(freeIdx);
+
+% Expander for free to full (fixed) layout
+expandParamsFixed  = @(Xfree) local_expand_params_fixed(Xfree, freeIdx);
+
+% Wrap objective so solvers only see free variables,
+% while keeping fixed ordering for existing fit functions
+funMulti = @(Xfree) funMultiFull(expandParamsFixed(Xfree));
+
 % Run chosen optimization
-switch Algorithm
+switch algorithm
     case 'patternsearch'
         params = patternsearch(funMulti, init_params, [], [], [], [], lb, ub);
 
@@ -298,52 +357,55 @@ switch Algorithm
         error('Invalid solver chosen');
 end
 
+% Expand to fixed full length 8 for output and reconstruction
+params = expandParamsFixed(params);
+
 % -----------------------------------------------------------------------
 % 9) Build the final reconstruction from the optimized parameters
 % -----------------------------------------------------------------------
-if useBlendElectrodeModel
-    alpha_an        = params(1);
-    beta_an         = params(2);
-    alpha_cat       = params(3);
-    beta_cat        = params(4);
-    gamma_Blend2    = params(5);
-    if allowAnodeInhomogeneity || allowCathodeInhomogeneity
-        inhomo_val_an = params(6);
-        inhomo_val_ca = params(7);
-    else
-        inhomo_val_an = 0;
-        inhomo_val_ca = 0;
-    end
-    
+alpha_an          = params(1);
+beta_an           = params(2);
+alpha_cat         = params(3);
+beta_cat          = params(4);
+gamma_an_blend2   = params(5);
+gamma_ca_blend2   = params(6);
+inhom_val_an      = params(7);
+inhom_val_ca      = params(8);
+
+% Compute anode curve; split between blend and non-blend paths
+if myData.useAnodeBlend && ~isempty(myData.Q_anode_blend1_interp)
+    [blendSOC, blendU] = calculate_blend_curve(gamma_an_blend2, myData, 'anode');
 else
-    alpha_an  = params(1);
-    beta_an   = params(2);
-    alpha_cat = params(3);
-    beta_cat  = params(4);
-    gamma_Blend2  = 0;
+    blendSOC = half_and_full_cell_data.anode_SOC_single;
+    blendU   = half_and_full_cell_data.anode_U_single;
 end
 
-% Compute anode curve (blend or pure Blend1)
-[blendSOC, blendU] = blend_anode_curve(gamma_Blend2, myData, inhomo_val_an);
-% Compute cathode curve with inhomogeneities
+% Apply anode inhomogeneity to the source curve if enabled
+if allowAnodeInhomogeneity
+    blendU = calculate_inhomogeneity(blendSOC, blendU, inhom_val_an);
+end
+
+% Compute cathode curve (blend optional) with inhomogeneities
+if myData.useCathodeBlend && ~isempty(myData.Q_cathode_blend1_interp)
+    [cathSOC_src, cathU_src] = calculate_blend_curve(gamma_ca_blend2, myData, 'cathode');
+else
+    cathSOC_src = half_and_full_cell_data.normCathode_SOC;
+    cathU_src   = half_and_full_cell_data.normCathode_U;
+end
 if allowCathodeInhomogeneity
-    half_and_full_cell_data.normCathode_U = ...
-        calculate_inhomogeneity( ...
-            half_and_full_cell_data.normCathode_SOC, ...
-            half_and_full_cell_data.normCathode_U, inhomo_val_ca);
+    cathU_src = calculate_inhomogeneity( ...
+        cathSOC_src, cathU_src, inhom_val_ca);
 end
 
 % Shift/scale SOC for anode & cathode
 anodeSOC        = alpha_an  * blendSOC      + beta_an;
-cathSOC         = alpha_cat * ...
-    half_and_full_cell_data.normCathode_SOC + beta_cat;
-normCathode_U   = half_and_full_cell_data.normCathode_U;
+cathSOC         = alpha_cat * cathSOC_src + beta_cat;
+normCathode_U   = cathU_src;
 
 % Evaluate on a uniform 0..1 axis
 reconSOC     = linspace(0, 1, dataLength);
 anodeU_recon = interp1(anodeSOC, blendU,         reconSOC, 'linear', 0);
-cathU_recon  = interp1(cathSOC, ...
-    half_and_full_cell_data.normCathode_U, reconSOC, 'linear', 0);
+cathU_recon  = interp1(cathSOC, cathU_src, reconSOC, 'linear', 0);
 fcU_model    = cathU_recon - anodeU_recon;
 
 % Compute measured vs. calculated DVA
@@ -363,7 +425,7 @@ ICA_smooth_meas = smooth(ICA_meas,  smoothingPoints, 'lowess');
 ICA_smooth_calc = smooth(ICA_calc,  smoothingPoints, 'lowess');
 
 % Return the optimization settings
-AlgorithmOut      = Algorithm;
+algorithmOut      = algorithm;
 weightOCV_Out = weightOCV;
 
 % -----------------------------------------------------------------------
@@ -375,8 +437,8 @@ weightOCV_Out = weightOCV;
             X, myData, Q0, ROI_OCV_min, ROI_OCV_max, ROI_DVA_min, ...
             ROI_DVA_max, ROI_ICA_min, ROI_ICA_max, weightOCV, weightDVA, ...
             weightICA, refDataLoc, LAM_prevAnLocal, LAM_prevCathLocal, ...
-            LAM_prevAnBlend1Local, LAM_prevAnBlend2Local, Capa_actLoc, ...
-            useBlend, aAnodeLossLocal, aCathodeLossLocal, ...
+            LAM_prevAnBlend1Local, LAM_prevAnBlend2Local, capa_actLoc, ...
+            useAnodeBlendLocal, useCathodeBlendLocal, aAnodeLossLocal, aCathodeLossLocal, ...
             aAnodeBlend1LossLocal, aAnodeBlend2LossLocal, ...
             limitPositiveAnodeLossLocal, limitPositiveCathodeLossLocal, ...
             limitPositiveBlend1LossLocal, limitPositiveBlend2LossLocal, ...
@@ -385,15 +447,15 @@ weightOCV_Out = weightOCV;
         baseVal = zeros(size(X,1),1);
         if weightOCV ~= 0
             baseVal = baseVal + weightOCV * ...
-                fit_OCV_blend(X, myData, ROI_OCV_min, ROI_OCV_max);
+                fit_OCV(X, myData, ROI_OCV_min, ROI_OCV_max);
         end
         if weightDVA ~= 0
             baseVal = baseVal + weightDVA * ...
-                fit_DVA_mae_blend(X, myData, Q0, ROI_DVA_min, ROI_DVA_max);
+                fit_DVA(X, myData, Q0, ROI_DVA_min, ROI_DVA_max, dvaPrecomp);
         end
         if weightICA ~= 0
             baseVal = baseVal + weightICA * ...
-                fit_ICA_mae_blend(X, myData, Q0, ROI_ICA_min, ROI_ICA_max);
+                fit_ICA(X, myData, Q0, ROI_ICA_min, ROI_ICA_max, icaPrecomp);
         end
 
         Npop = size(X,1);
@@ -403,23 +465,26 @@ weightOCV_Out = weightOCV;
         for i = 1:Npop
             x_i = X(i,:);
 
-            if useBlend
-                paramsLoc = x_i;
-            else
-                paramsLoc = [x_i, 0];
+            paramsLoc = x_i;
+            if ~useAnodeBlendLocal
+                paramsLoc(5) = 0; % enforce zero anode blend fraction
+            end
+            if ~useCathodeBlendLocal
+                paramsLoc(6) = 0; % enforce zero cathode blend fraction
             end
             
-            [LAM_An, LAM_Cath, ~, LAM_An_Blend2, LAM_An_Blend1] = ...
+            
+            [LAM_An, LAM_Cath, ~, LAM_An_blend2, LAM_An_blend1, ~, ~] = ...
                 calculate_degradation_modes( ...
-                paramsLoc, Capa_actLoc, refDataLoc.Capa_Anode_init, ...
-                refDataLoc.Capa_Cathode_init, refDataLoc.Capa_Inventory_init, ...
-                refDataLoc.gamma_Blend2_init, fitReverseLocal);
+                paramsLoc, capa_actLoc, refDataLoc.capa_anode_init, ...
+                refDataLoc.capa_cathode_init, refDataLoc.capa_inventory_init, ...
+                refDataLoc.gamma_an_blend2_init, refDataLoc.gamma_ca_blend2_init, fitReverseLocal);
             
 
             LAM_currentAn = LAM_An;
             LAM_currentCath = LAM_Cath;
-            LAM_currentAnBlend1 = LAM_An_Blend1;
-            LAM_currentAnBlend2 = LAM_An_Blend2;
+            LAM_currentAnBlend1 = LAM_An_blend1;
+            LAM_currentAnBlend2 = LAM_An_blend2;
 
             tmpPenalty = 0;
 
@@ -462,4 +527,19 @@ weightOCV_Out = weightOCV;
 
         f = baseVal + penalty;
     end
+
+% -----------------------------------------------------------------------
+% Nested function: local_expand_params_fixed
+%   Expands free parameter vectors to full length 8 fixed order
+% -----------------------------------------------------------------------
+    function Xfull = local_expand_params_fixed(Xfree, freeIdxLoc)
+
+        if isvector(Xfree)
+            Xfree = Xfree(:).';
+        end
+
+        Xfull = zeros(size(Xfree, 1), 8);
+        Xfull(:, freeIdxLoc) = Xfree;
+    end
+
 end
