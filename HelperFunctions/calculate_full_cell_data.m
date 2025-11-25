@@ -9,11 +9,11 @@ function [half_and_full_cell_data] = calculate_full_cell_data(fullCellData, half
 
 
 % -----------------------------------------------------------------------
-% parse the full-cell data (fcSOC_raw, fcU_raw, Capa_act) -> dataType='fullcell'
+% parse the full-cell data (fcSOC_raw, fcU_raw, capa_act) -> dataType='fullcell'
 % -----------------------------------------------------------------------
 fullCellData    = convertIfMat(fullCellData);
 
-[fcSOC_raw, fcU_raw, Capa_act] = parse_data_input(fullCellData, 'fullcell');
+[fcSOC_raw, fcU_raw, capa_act] = parse_data_input(fullCellData, 'fullcell');
 fcU_smooth   = smooth(fcU_raw, settings.smoothingPoints, 'lowess');
 fullCell_SOC = linspace(0, 1, settings.dataLength);
 try
@@ -29,7 +29,7 @@ Q0 = max(fcSOC_raw) - min(fcSOC_raw);
 
 half_and_full_cell_data.fullCell_SOC      = fullCell_SOC;
 half_and_full_cell_data.fullCell_U      = fullCell_U;
-half_and_full_cell_data.Capa_act        = Capa_act;
+half_and_full_cell_data.capa_act        = capa_act;
 half_and_full_cell_data.Q0              = Q0;
 
 % -----------------------------------------------------------------------
@@ -49,4 +49,3 @@ half_and_full_cell_data.Q0              = Q0;
     end
 
 end
-

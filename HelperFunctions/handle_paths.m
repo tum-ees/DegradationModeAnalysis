@@ -20,7 +20,7 @@ function [savePath_model, savePathDMA, savePathBlend2Content] = handle_paths(set
     % Final save paths
     savePath_model          = mk('Results_Parameter');
     savePathDMA             = mk('Results_DMA');
-    savePathBlend2Content   = mk('Results_Blend2Content');
+    savePathBlend2Content   = mk('Results_blend2Content');
     
     % ensure directories exist
     for p = {savePath_model, savePathDMA, savePathBlend2Content}

@@ -48,12 +48,12 @@ and is robust even when <span style="font-style:italic;">γ</span><sub>Si</sub>
 
 * Cost function allows to use OCV, DVA and ICA in different regions; partial OCV as input implicitly possible with regions: set <code>s.weightOCV</code>, <code>s.weightDVA</code>, <code>s.weightICA</code>. Focus the fit with <code>s.ROI_OCV_min/max</code>, <code>s.ROI_DVA_min/max</code>, <code>s.ROI_ICA_min/max</code>.
 
-* Solver and run control: choose <code>s.Algorithm</code> (e.g. <code>ga</code>, <code>particleswarm</code>, <code>patternsearch</code>, <code>GlobalSearch</code>, <code>fmincon</code>, <code>lsqnonlin</code>). 
+* Solver and run control: choose <code>s.algorithm</code> (e.g. <code>ga</code>, <code>particleswarm</code>, <code>patternsearch</code>, <code>GlobalSearch</code>, <code>fmincon</code>, <code>lsqnonlin</code>). 
 For non-deterministic algorithms (such as <code>ga</code>) use <code>s.rmseThreshold</code>, <code>s.reqAccepted</code>, <code>s.maxTriesOverall</code>.
 
 * Direction of pOCV: set <code>s.direction</code> to <code>'charge'</code> or <code>'discharge'</code>.
 
-* Blend options: enable with <code>s.useBlend</code>; set <code>s.gammaBlend2_init</code> and <code>s.gammaBlend2_upperBound</code>.
+* Anode blend options: enable with <code>s.useAnodeBlend</code>; set <code>s.gammaAnBlend2_init</code> and <code>s.gammaAnBlend2_upperBound</code>.
 
 * Inhomogeneity of anode and cathode estimated separately: toggle <code>s.allowAnodeInhomogeneity</code>, <code>s.allowCathodeInhomogeneity</code>; limit with <code>s.maxInhomogeneity</code>, <code>s.maxInhomogeneityDelta</code>.
 

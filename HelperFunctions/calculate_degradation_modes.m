@@ -1,4 +1,4 @@
-function [LAM_Anode, LAM_Cathode, LI, LAM_Anode_Blend2, LAM_Anode_Blend1] = calculate_degradation_modes(params, Capa_act, Capa_Anode_init, Capa_Cathode_init, Capa_Inventory_init, gamma_Blend2_init, varargin)
+function [LAM_anode, LAM_cathode, LI, LAM_anode_blend2, LAM_anode_blend1, LAM_cathode_blend2, LAM_cathode_blend1] = calculate_degradation_modes(params, capa_act, capa_anode_init, capa_cathode_init, capa_inventory_init, gamma_an_blend2_init, gamma_ca_blend2_init, varargin)
 %> Author: Can Korkmaz (can.korkmaz@tum.de)
 %> supervised by Mathias Rehm (mathias.rehm@tum.de)
 %> Additional code by Josef Eizenhammer (josef.eizenhammer@tum.de)
@@ -14,47 +14,65 @@ function [LAM_Anode, LAM_Cathode, LI, LAM_Anode_Blend2, LAM_Anode_Blend1] = calc
         fitReverse = logical(varargin{1});
     end
     
-    alpha_Anode   = params(1);
-    beta_Anode    = params(2);
-    alpha_Cathode = params(3);
-    beta_Cathode  = params(4);
+    alpha_anode   = params(1);
+    beta_anode    = params(2);
+    alpha_cathode = params(3);
+    beta_cathode  = params(4);
     
-    if numel(params) < 5
-        gamma_Blend2 = 0;
-    else
-        gamma_Blend2 = params(5);
-    end
+    % if ~blend mode -> params(5/6) == 0
+    gamma_an_blend2 = params(5);
+    gamma_ca_blend2 = params(6); % cathode blend share
 
     % Compute current anode capacity
-    Capa_Anode = alpha_Anode * Capa_act;
+    capa_anode = alpha_anode * capa_act;
+    capa_cathode = alpha_cathode * capa_act;
 
-    % Initial sub-capacities based on reference gamma_Blend2_init
-    Capa_Anode_Blend2_init = Capa_Anode_init * gamma_Blend2_init;
-    Capa_Anode_Blend1_init = Capa_Anode_init * (1 - gamma_Blend2_init);
+    % Initial sub-capacities based on reference gamma_an_blend2_init
+    capa_anode_blend2_init = capa_anode_init * gamma_an_blend2_init;
+    capa_anode_blend1_init = capa_anode_init * (1 - gamma_an_blend2_init);
+    capa_cathode_blend2_init = capa_cathode_init * gamma_ca_blend2_init;
+    capa_cathode_blend1_init = capa_cathode_init * (1 - gamma_ca_blend2_init);
     
-    % Current sub-capacities using the optimized gamma_Blend2 (or zero in pure Blend1 mode)
-    Capa_Anode_Blend2 = Capa_Anode * gamma_Blend2;
-    Capa_Anode_Blend1 = Capa_Anode * (1 - gamma_Blend2);
+    % Current sub-capacities using the optimized gamma_an_blend2 (or zero in pure Blend1 mode)
+    capa_anode_blend2 = capa_anode * gamma_an_blend2;
+    capa_anode_blend1 = capa_anode * (1 - gamma_an_blend2);
+    capa_cathode_blend2 = capa_cathode * gamma_ca_blend2;
+    capa_cathode_blend1 = capa_cathode * (1 - gamma_ca_blend2);
     
     % Calculate loss for Blend2 and Blend1 parts separately
-    LAM_Anode_Blend2 = (Capa_Anode_Blend2_init - Capa_Anode_Blend2) / Capa_Anode_Blend2_init;
-    LAM_Anode_Blend1 = (Capa_Anode_Blend1_init - Capa_Anode_Blend1) / Capa_Anode_Blend1_init;
+    LAM_anode_blend2 = safe_loss(capa_anode_blend2_init, capa_anode_blend2);
+    LAM_anode_blend1 = safe_loss(capa_anode_blend1_init, capa_anode_blend1);
+    LAM_cathode_blend2 = safe_loss(capa_cathode_blend2_init, capa_cathode_blend2);
+    LAM_cathode_blend1 = safe_loss(capa_cathode_blend1_init, capa_cathode_blend1);
     
     % Overall anode and cathode degradation
-    LAM_Anode = (Capa_Anode_init - Capa_Anode) / Capa_Anode_init;
-    Capa_Cathode = alpha_Cathode * Capa_act;
-    LAM_Cathode = (Capa_Cathode_init - Capa_Cathode) / Capa_Cathode_init;
+    LAM_anode = (capa_anode_init - capa_anode) / capa_anode_init;
+    LAM_cathode = (capa_cathode_init - capa_cathode) / capa_cathode_init;
     
     % Inventory loss calculation
-    Capa_Inventory = (alpha_Cathode + beta_Cathode - beta_Anode) * Capa_act;
-    LI = (Capa_Inventory_init - Capa_Inventory) / Capa_Inventory_init;
+    capa_inventory = (alpha_cathode + beta_cathode - beta_anode) * capa_act;
+    LI = (capa_inventory_init - capa_inventory) / capa_inventory_init;
 
     if fitReverse
-        LAM_Cathode = -LAM_Cathode*Capa_Cathode_init/Capa_Cathode;
-        LAM_Anode = -LAM_Anode*Capa_Anode_init/Capa_Anode;
-        LAM_Anode_Blend1 = -LAM_Anode_Blend1*Capa_Anode_Blend1_init/Capa_Anode_Blend1;
-        LAM_Anode_Blend2 = -LAM_Anode_Blend2*Capa_Anode_Blend2_init/Capa_Anode_Blend2;
+        LAM_cathode = -LAM_cathode*capa_cathode_init/capa_cathode;
+        LAM_anode = -LAM_anode*capa_anode_init/capa_anode;
+        LAM_anode_blend1 = -LAM_anode_blend1*capa_anode_blend1_init/capa_anode_blend1;
+        LAM_anode_blend2 = -LAM_anode_blend2*capa_anode_blend2_init/capa_anode_blend2;
+        if capa_cathode_blend1 ~= 0
+            LAM_cathode_blend1 = -LAM_cathode_blend1*capa_cathode_blend1_init/capa_cathode_blend1;
+        end
+        if capa_cathode_blend2 ~= 0
+            LAM_cathode_blend2 = -LAM_cathode_blend2*capa_cathode_blend2_init/capa_cathode_blend2;
+        end
     end
 
+    % nested helper to avoid divide-by-zero
+    function lossVal = safe_loss(initVal, currentVal)
+        if initVal == 0
+            lossVal = 0;
+        else
+            lossVal = (initVal - currentVal) / initVal;
+        end
+    end
     
 end

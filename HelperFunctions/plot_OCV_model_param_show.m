@@ -1,4 +1,4 @@
-function plot_OCV_model_param_show(solution, i, cellName)
+function plot_OCV_model_param_show(solution, i, cellName, labelCfg)
 %> Authors : Mathias Rehm
 %> E-mail : mathias.rehm@tum.de
 %> Date    : 2025-10-09
@@ -79,6 +79,15 @@ alpha_an  = params(1);
 beta_an   = params(2);
 alpha_cat = params(3);
 beta_cat  = params(4);
+
+% 2.1 labels
+defaultLabels = struct('labelCathode','Cathode', ...
+    'labelAnode','Anode');
+if nargin < 4 || isempty(labelCfg)
+    labelCfg = defaultLabels;
+end
+if ~isfield(labelCfg,'labelCathode'), labelCfg.labelCathode = defaultLabels.labelCathode; end
+if ~isfield(labelCfg,'labelAnode'),   labelCfg.labelAnode   = defaultLabels.labelAnode;   end
 
 %% 3) Defaults for fonts
 set(groot, {'defaultAxesFontSize','defaultTextFontSize','defaultAxesTickLabelInterpreter'}, ...
@@ -181,7 +190,9 @@ grid(ax1,'on');
 
 % legend text updated
 lgd = legend(ax1,[h1 h2 h3 h4], ...
-    'FC measured', 'FC reconstructed', 'Cathode reconstructed', 'Anode reconstructed', ...
+    'FC measured', 'FC reconstructed', ...
+    sprintf('%s reconstructed', labelCfg.labelCathode), ...
+    sprintf('%s reconstructed', labelCfg.labelAnode), ...
     'Interpreter','latex','FontSize',legendFont,'Orientation','horizontal');
 lgd.Layout.Tile = 'south';
 

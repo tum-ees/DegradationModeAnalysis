@@ -1,13 +1,14 @@
 function plot_DMA(Data, varargin)
-%==========================================================================
-% plotDMA  (tiledlayout edition – **with RMSE gap**)              2025-06-18
+% plotDMA  (tiledlayout edition)                                  2025-06-18
 %--------------------------------------------------------------------------
-%> Author(s) :  Can Korkmaz  &  Mathias Rehm
-%> Last edit :  2025-06-18  – MR
-%>             • kept digit-based CU filter & robust RMSE detection
-%>             • switched to nested *tiledlayout* so the RMSE panel gets
-%>               extra horizontal space for its y-label (replicates the old
-%>               manual “gapRMSE = 0.07” behaviour)
+%> Author: Mathias Rehm (mathias.rehm@tum.de)
+%> additional code by Can Korkmaz (can.korkmaz@tum.de)
+%> Date: 2025-06-18
+%>
+%>             • kept digit-based CU filter and robust RMSE detection
+%>             • uses nested tiledlayout so the RMSE panel gets extra
+%>               horizontal space for its y-label (replicates the old
+%>               manual gapRMSE = 0.07 behaviour)
 %>             • figure export code permanently removed (keywords ignored)
 %
 % DESCRIPTION
@@ -16,8 +17,8 @@ function plot_DMA(Data, varargin)
 %     non-digit housekeeping fields are skipped.
 %   • Optional right-most panel shows RMSE; recognises
 %       -  RMSE_0_9   -  RMSE_full   -  RMSE      (all V → mV).
-%   • 3-line mode  (NCA / Graphite / Lithium)  **or**
-%     4-line mode  (NCA / Graphite / Silicon / Lithium) via the
+%   • 3-line mode  (Cathode / Anode / ChargeCarrierInv)  **or**
+%     4-line mode  (Cathode / An-blend1 / An-blend2 / ChargeCarrierInv) via the
 %     *useBlendElectrodeModel* flag.
 %   • All options are key–value pairs; list at call site is order-free.
 %
@@ -31,23 +32,37 @@ function plot_DMA(Data, varargin)
 %   'plotRMSE'                 logical   (default true)
 %   ***  “savePathDMA” & “saveFig” are parsed only for backward-compat;   ***
 %   ***  they DO NOTHING in this edition (no file export).               ***
-%==========================================================================
+%--------------------------------------------------------------------------
 
 %% 1 — Set defaults --------------------------------------------------------
-useBlendElectrodeModel = false;
+% Blend toggles are independent; legacy useBlendElectrodeModel maps to the anode blend flag.
+useAnodeBlendModel    = false;
+useCathodeBlendModel  = false;
 EFC         = [];
 plotTitles  = {};
 plotRMSE    = true;       % show RMSE panel unless explicitly disabled
 CalendarOrCyclic = 0;
+labelCathode     = 'Cathode';
+labelAnode       = 'Anode';
+labelAnodeBlend1 = 'An-blend1';
+labelAnodeBlend2 = 'An-blend2';
+labelCathodeBlend1 = 'Ca-blend1';
+labelCathodeBlend2 = 'Ca-blend2';
+labelChargeCarrierInv = 'Charge-carrier-inv';
+plotCathode      = true;  % Use only to hide cathode for LFP (cathode aging not meaningful)
 
-%% 2 — Parse varargin ------------------------------------------------------
+%% 2 - Parse varargin ------------------------------------------------------
 for v = 1:2:numel(varargin)
     key = lower(string(varargin{v}));
     val = varargin{v+1};
 
     switch key
-        case {'useblendelectrodemodel','blend','useblend'}
-            useBlendElectrodeModel = logical(val);
+        case {'useblendelectrodemodel','blend','useblend'} % legacy: maps to anode blend
+            useAnodeBlendModel = logical(val);
+        case {'useanodeblendmodel','anodeblend'}
+            useAnodeBlendModel = logical(val);
+        case {'usecathodeblendmodel','cathodeblend'}
+            useCathodeBlendModel = logical(val);
 
         case 'efc'
             EFC = val;
@@ -61,16 +76,44 @@ for v = 1:2:numel(varargin)
         case 'calendarorcyclic'
             CalendarOrCyclic = val;
 
+        case 'labels'
+            if isstruct(val)
+                if isfield(val,'labelCathode'),          labelCathode          = val.labelCathode; end
+                if isfield(val,'labelAnode'),            labelAnode            = val.labelAnode; end
+                if isfield(val,'labelAnodeBlend1'),      labelAnodeBlend1      = val.labelAnodeBlend1; end
+                if isfield(val,'labelAnodeBlend2'),      labelAnodeBlend2      = val.labelAnodeBlend2; end
+                if isfield(val,'labelCathodeBlend1'),    labelCathodeBlend1    = val.labelCathodeBlend1; end
+                if isfield(val,'labelCathodeBlend2'),    labelCathodeBlend2    = val.labelCathodeBlend2; end
+                if isfield(val,'labelChargeCarrierInv'), labelChargeCarrierInv = val.labelChargeCarrierInv; end
+            end
+
+        case {'labelcathode','cathodelabel'}
+            labelCathode = val;
+        case {'labelanode','anodelabel'}
+            labelAnode = val;
+        case {'labelanodeblend1','anodeblend1label'}
+            labelAnodeBlend1 = val;
+        case {'labelanodeblend2','anodeblend2label'}
+            labelAnodeBlend2 = val;
+        case {'labelcathodeblend1','cathodeblend1label'}
+            labelCathodeBlend1 = val;
+        case {'labelcathodeblend2','cathodeblend2label'}
+            labelCathodeBlend2 = val;
+        case {'labelchargecarrierinv','labellithium','lithiumlabel'}
+            labelChargeCarrierInv = val;
+
+        case 'plotcathode'
+            plotCathode = logical(val);
+
         % ---------- legacy / ignored keys --------------------------------
         case {'savepathdma','savefig','savefigure','savepath'}
-            % These keys are silently accepted so old scripts don’t error,
+            % These keys are silently accepted so old scripts do not error,
             % but they no longer trigger any file export.
 
         otherwise
-            warning('plotDMA: unknown option “%s” – ignored.', varargin{v});
+            warning('plotDMA: unknown option %s ignored.', varargin{v});
     end
 end
-
 %% 3 — Identify CU-like fields & validate EFC -----------------------------
 allFields = fieldnames(Data);
 
@@ -89,27 +132,40 @@ if numel(EFC) ~= nCU
 end
 
 %% 4 — Harvest LAM / LI & (optionally) RMSE ------------------------------
-if useBlendElectrodeModel
-    varNames = {'NCA','Graphite','Silicon','Lithium', 'Anode'};   % 4 curves
-else
-    varNames = {'NCA','Graphite','Lithium'};             % 3 curves
-end
-nPlots = numel(varNames);
+  varNames = {};
+  lamExtractors = {};
 
-LAM = zeros(nCU,nPlots);          % rows = CU, cols = curves
-RMSE = NaN(nCU,1);                % will stay NaN if plotRMSE == false
+  if plotCathode
+      varNames{end+1} = labelCathode;
+      lamExtractors{end+1} = @(d)100*d.LAM_cathode;
+      if useCathodeBlendModel
+          varNames = [varNames, {labelCathodeBlend1, labelCathodeBlend2}];
+          lamExtractors = [lamExtractors, {@(d)100*d.LAM_cathode_blend1, @(d)100*d.LAM_cathode_blend2}];
+      end
+  end
+
+  % Anode aggregate always plotted; add blends if enabled
+  varNames{end+1} = labelAnode;
+  lamExtractors{end+1} = @(d)100*d.LAM_anode;
+  if useAnodeBlendModel
+      varNames = [varNames, {labelAnodeBlend1, labelAnodeBlend2}];
+      lamExtractors = [lamExtractors, {@(d)100*d.LAM_anode_blend1, @(d)100*d.LAM_anode_blend2}];
+  end
+
+  % Charge-carrier inventory always plotted
+  varNames{end+1} = labelChargeCarrierInv;
+  lamExtractors{end+1} = @(d)100*d.LI;
+
+  nPlots = numel(varNames);
+  
+  LAM = zeros(nCU,nPlots);          % rows = CU, cols = curves
+  RMSE = NaN(nCU,1);                % will stay NaN if plotRMSE == false
 
 for k = 1:nCU
     f = cuFld{k};
     % ---- LAM / LI ------------------------------------------------------
-    LAM(k,1) = 100*Data.(f).LAM_Cathode;
-    LAM(k,2) = 100*Data.(f).LAM_Anode_Blend1;
-    if useBlendElectrodeModel
-        LAM(k,3) = 100*Data.(f).LAM_Anode_Blend2;
-        LAM(k,4) = 100*Data.(f).LI;
-        LAM(k,5) = 100*Data.(f).LAM_Anode;
-    else
-        LAM(k,3) = 100*Data.(f).LI;
+    for idxLam = 1:nPlots
+        LAM(k,idxLam) = lamExtractors{idxLam}(Data.(f));
     end
     % ---- RMSE -----------------------------------------------------------
     if plotRMSE
@@ -124,7 +180,7 @@ for k = 1:nCU
     end
 end
 
-%% 5 — Figure & **nested tiledlayout** to create RMSE gap -----------------
+%% 5 — Figure & nested tiledlayout to create RMSE gap -----------------
 set(groot,'defaultAxesTickLabelInterpreter','latex');
 
 fig = figure('Units','centimeters','Position',[3 3 20 6]);
@@ -134,14 +190,14 @@ outerTL   = tiledlayout(fig,1,outerCols, ...
               'TileSpacing','compact','Padding','compact');
 
 
-% place an inner tiledlayout spanning the *first* nPlots tiles of outerTL
+% place an inner tiledlayout spanning the first nPlots tiles of outerTL
 innerTL = tiledlayout(outerTL,1,nPlots, ...
               'TileSpacing','none','Padding','compact');
 innerTL.Layout.Tile     = 1;
 innerTL.Layout.TileSpan = [1 nPlots];    % occupies first nPlots columns
 
 % Result: LAM axes have zero internal gap, while outerTL’s inter-tile
-% spacing provides the *extra* gap before the RMSE axis.
+% spacing provides the extra gap before the RMSE axis.
 
 %% 6 - Style constants ----------------------------------------------------
 TUM_colors;                        % defines TUM color palette variables
@@ -196,7 +252,7 @@ if plotRMSE
     axR = nexttile(outerTL,outerCols);   % last column of outer layout
     hold(axR,'on');
 
-    % warn if *all* RMSE values are missing
+    % warn if all RMSE values are missing
     if all(isnan(RMSE))
         warning('plotDMA: all RMSE values are NaN – RMSE panel will be empty.');
     end
@@ -222,12 +278,6 @@ if plotRMSE
     axR.LineWidth  = lnW;
     axR.FontSize   = fontSz;
     axR.FontName   = 'Times New Roman';
-
-    
 end
 
-
-
 end
-%==========================================================================
-
