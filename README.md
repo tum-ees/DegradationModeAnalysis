@@ -1,10 +1,41 @@
-<div align="center"> <h1>DegradationModeAnalysis</h1>
+<div align="center">
+  <h1>DegradationModeAnalysis</h1>
 
-Degradation mode analysis tool + tool to calculate silicon OCPs
+  Degradation mode analysis tool + tool to calculate silicon OCPs
 
-<img src="doc/OCP_shift_over_SOC.gif" width="400"/>
+  <br>
 
-</div> <h2>🔭 Overview</h2>
+  <!-- environment and language -->
+  <a href="https://www.mathworks.com/help/matlab/">
+    <img src="https://img.shields.io/badge/Platform-MATLAB-blue.svg" alt="MATLAB">
+  </a>
+
+  <!-- license badge: MIT -->
+  <a href="https://opensource.org/licenses/MIT">
+    <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License">
+  </a>
+
+  <!-- paper or preprint badge; update link once available -->
+  <a href="https://arxiv.org/abs/XXXX.XXXXX">
+    <img src="https://img.shields.io/badge/Paper-coming%20soon-informational.svg" alt="Paper">
+  </a>
+
+  <!-- DOI badge; fill in and uncomment once you have the DOI -->
+  <!--
+  <a href="https://doi.org/10.XXXX/zenodo.XXXXXXX">
+    <img src="https://zenodo.org/badge/DOI/10.XXXX/zenodo.XXXXXXX.svg" alt="DOI">
+  </a>
+  -->
+
+  <br>
+
+  <img src="doc/OCP_shift_over_SOC.gif" width="400">
+</div>
+
+<h2>🔭 Overview</h2>
+
+
+
 This tool allows the degradation mode analysis of lithium- and sodium-ion batteries. 
 In case of a blend anode, the silicon OCP can be selected from a pool of literature OCPS.
 We recommend, however, to calculate the silicon OCP based on a measured blend OCP, which can be
@@ -53,7 +84,9 @@ For non-deterministic algorithms (such as <code>ga</code>) use <code>s.rmseThres
 
 * Direction of pOCV: set <code>s.direction</code> to <code>'charge'</code> or <code>'discharge'</code>.
 
-* Anode blend options: enable with <code>s.useAnodeBlend</code>; set <code>s.gammaAnBlend2_init</code> and <code>s.gammaAnBlend2_upperBound</code>.
+* Anode blend option: enable with <code>s.useAnodeBlend</code> and set <code>s.gammaAnBlend2_init</code>, <code>s.gammaAnBlend2_upperBound</code>.
+
+* Cathode blend option: enable with <code>s.useCathodeBlend</code> and set <code>s.gammaCaBlend2_init</code>, <code>s.gammaCaBlend2_upperBound</code>; supply a second cathode OCP.
 
 * Inhomogeneity of anode and cathode estimated separately: toggle <code>s.allowAnodeInhomogeneity</code>, <code>s.allowCathodeInhomogeneity</code>; limit with <code>s.maxInhomogeneity</code>, <code>s.maxInhomogeneityDelta</code>.
 
@@ -99,12 +132,12 @@ These OCPs originate from published sources. Add proper citations if you use the
 
 <h2>🎖️ Acknowledgments</h2>
 We would like to thank Johannes Natterer for providing us with a data set of a cyclic aged P45B cell of his aging study for 
-testing the tools.
+testing the tools. In addition, we thank Maximilian Leitenstern for support in migration to GitHub.
 
 
 <h2>📽️ Minimal workable example</h2>
 In its current form, main_DMA serves as minimal workable example. 
-In its current form, the script performs a blend electrode fitting for a cyclic aged Molicel P45B cell. 
+In its current form, the script performs a anode-blend electrode fitting for a cyclic aged Molicel P45B cell. 
 The pOCV curves are stored using the table structure (<code>.\InputData\TestData\P45B_serial23_aging_data_table.mat </code>). 
 The OCP curves for the MWE are described in the accompanied publication (see Citation).
 
