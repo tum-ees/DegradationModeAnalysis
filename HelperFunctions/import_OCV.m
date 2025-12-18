@@ -1,39 +1,44 @@
 function [dataOut, data, varargout] = import_OCV(Path, nameTableColumnOCV, inputIsAging_data_table, varargin)
 %> Authors : Mathias Rehm
 %> E-mail : mathias.rehm@tum.de
-%> Date    : 2025-09-15
+%> Date    : 2025-12-03
 %
 % import_OCV
-% Import OCV/OCP curve data for DMA_main. Supports:
-%   • Parent dir with CU* subfolders  (pass 'CheckUp', N; optional 'FileNameFilter')
-%   • Direct CUi folder               (same as above)
-%   • Direct .mat file                (table "aging_data_table" or variables TestData[/TestInfo])
 %
-% Row selection for tables (aging_data_table):
-%   • Optional 'Identifier'={ 'Col',Val; ... } AND-filter
-%   • Then pick requested CheckUp via CU/CheckUp column; else row index fallback
+% Import OCV or OCP curve data for DMA_main
 %
-% Payload extraction from selected row:
-%   1) If nameTableColumnOCV is given and points to a table/timetable → wrap as .TestData
-%   2) Else first table/timetable column → wrap as .TestData
-%   3) Else first struct with .TestData (table/timetable) → use that
-%   4) Else treat as flat table with SOC/U/MaxAhStep → normalize to struct
+% Supported input types
+%   • Parent directory containing CU* subfolders
+%   • Direct CUi folder
+%   • Direct MAT file with
+%       - aging_data_table like table
+%       - or variables TestData and TestInfo
 %
-% varargout{1} (second output):
-%   'ReturnColumn' (if provided & exists) → else EFC → RPT → CU → NaN/index fallback
+% Row selection in aging_data_table
+%   • Optional Identifier: AND filter on multiple columns
+%   • Then select by CheckUp number using CU like columns
+%   • If no CU like column exists, use CheckUp as row index
 %
-% Notes:
-%   • When wrapping tabular data, we also try to attach a TestInfo if a matching column
-%     (starts with 'Testinfo') exists in the table, or if the MAT file provides TestInfo.
-%   • SOC is computed and appended if missing.
+% Payload extraction from selected row
+%   1) If nameTableColumnOCV points to a table or timetable
+%   2) Else first table or timetable column in row
+%   3) Else first struct with TestData that is table or timetable
+%   4) Else treat row as flat SOC, U, MaxAhStep holder
+%
+% Outputs
+%   dataOut      struct with TestData (and TestInfo if available)
+%   data         raw table or struct used as input
+%   varargout{1} tag or index
+%                ReturnColumn (if given and found)
+%                otherwise EFC, or RPT, or CU, or fallback
 
-%% 1) Parse NV-args
+%% 1) Parse NV arguments
 p = inputParser;
-addParameter(p, 'Identifier', {});       % 1x2 or Nx2 {Col,Val}
-addParameter(p, 'CheckUp', []);          % numeric
-addParameter(p, 'FileNameFilter', '');   % substring to match a MAT in CUi
-addParameter(p, 'ReturnColumn', '');     % optional override for second output
-addParameter(p, 'agingDataTable', []);   % <-- map your injected NV-pair here
+addParameter(p, 'Identifier', {});       % identifier pairs to pre filter rows
+addParameter(p, 'CheckUp', []);          % numeric check up number
+addParameter(p, 'FileNameFilter', '');   % optional substring filter for MAT name
+addParameter(p, 'ReturnColumn', '');     % explicit column for third output
+addParameter(p, 'agingDataTable', []);   % external aging_data_table
 parse(p, varargin{:});
 
 identifier     = normalizeIdentifier(p.Results.Identifier);
@@ -42,70 +47,93 @@ fileNameFilter = p.Results.FileNameFilter;
 ReturnColName  = p.Results.ReturnColumn;
 agingDataTable = p.Results.agingDataTable;
 
-%% 2) Resolve Path kind (parent with CU*, direct CUi, or file)
-% We accept all three to stay compatible with existing callers (incl. your current get_fullcell_data).
+%% 2) Resolve Path type and decide which MAT file to use
+% Path can be parent of CUi folders, a CUi folder itself, a plain folder or a MAT file
+
 if isfolder(Path)
-    [parentDir, leaf] = fileparts(Path);
-    hasCUHere   = ~isempty(dir(fullfile(Path, 'CU*')));                       % parent with CU*
-    isCUfolder  = ~isempty(regexp(leaf, '^CU\d+$', 'once'));                  % direct CUi
+    [parentDir, leaf] = fileparts(Path); %#ok<ASGLU>
+
+    % Does this directory contain CU* subfolders
+    dirCU     = dir(fullfile(Path, 'CU*'));
+    hasCUHere = ~isempty(dirCU);
+
+    % Is this directory itself named like a CUi folder
+    isCUfolder = ~isempty(regexp(leaf, '^CU\d+$', 'once'));
 
     if hasCUHere
-        % 2a) Parent with CU* → dive into requested CUi and pick file
+        % Parent with CU* subfolders
         requireCheckUp(checkUpNum, 'Path points to CU* structure but no "CheckUp" given.');
         targetFolder = fullfile(Path, sprintf('CU%d', checkUpNum));
         Path = pickMatInCU(targetFolder, fileNameFilter);
 
     elseif isCUfolder
-        % 2b) Direct CUi folder → pick file
+        % Direct CUi folder
         Path = pickMatInCU(Path, fileNameFilter);
 
     else
-        % 2c) Plain directory (no CU*). Choose a single MAT (optionally by filter).
+        % Plain folder
         Path = pickMatInFolder(Path, fileNameFilter);
     end
 end
 
-%% 3) Load file
-if ~isfile(Path), error('File "%s" not found.', Path); end
+%% 3) Load MAT file or use injected table or struct
+
+if ~isfile(Path) && isempty(agingDataTable)
+    error('File "%s" not found.', Path);
+end
+
 if isempty(agingDataTable)
-    loaded   = load(Path);
+    loaded     = load(Path);
     flagLoaded = false;
 else
-    loaded = agingDataTable;
+    loaded     = agingDataTable;
     flagLoaded = true;
 end
-varNames = fieldnames(loaded);
 
-% 3a) aging_data_table mode: take the first variable as the table
+if isstruct(loaded)
+    varNamesLoaded = fieldnames(loaded);
+else
+    varNamesLoaded = {};
+end
+
+% aging_data_table mode
 if inputIsAging_data_table
     if ~flagLoaded
-        if numel(varNames) > 1
-            warning('inputIsAging_data_table=1 but multiple vars in MAT. Using first: %s', varNames{1});
+        if numel(varNamesLoaded) > 1
+            warning('import_OCV:MultiVarMat', ...
+                'inputIsAging_data_table=1 but MAT contains multiple variables. Using first: %s', varNamesLoaded{1});
         end
-        data = loaded.(varNames{1});
+        if isempty(varNamesLoaded)
+            error('inputIsAging_data_table=1 but loaded content is not a struct with variables.');
+        end
+        data = loaded.(varNamesLoaded{1});
     else
+        % agingDataTable was passed directly as table
         data = loaded;
     end
 
-% 3b) Direct TestData[/TestInfo] files (common in your workflow)
-elseif numel(varNames) == 2 && all(ismember({'TestData','TestInfo'}, varNames))
+% Direct TestData plus TestInfo
+elseif ~isempty(varNamesLoaded) && numel(varNamesLoaded) == 2 && all(ismember({'TestData','TestInfo'}, varNamesLoaded))
     dataOut = struct('TestData', loaded.TestData, 'TestInfo', loaded.TestInfo);
     dataOut = ensureSOC(dataOut, Path);
-    varargout{1} = NaN;  % No table row => no EFC/RPT/CU to read here
+    data    = loaded;
+    varargout{1} = NaN;  % no EFC tag is defined here
     return;
 
-elseif numel(varNames) == 1
-    data = loaded.(varNames{1});
+% Single variable in MAT, assume it is aging_data_table like content
+elseif ~isempty(varNamesLoaded) && numel(varNamesLoaded) == 1
+    data = loaded.(varNamesLoaded{1});
 
 else
-    error('MAT must contain either aging_data_table or [TestData (+TestInfo)]. Found: %s', strjoin(varNames, ', '));
+    error('MAT must contain either aging_data_table or [TestData (+TestInfo)]. Found variables: %s', strjoin(varNamesLoaded, ', '));
 end
 
-%% 4) Interpret content
-% 4a) If the loaded variable is already a struct with .TestData (rare but allowed)
+%% 4) Interpret loaded content
+
+% Case struct with TestData already present
 if isstruct(data) && isfield(data, 'TestData') && istabular_local(data.TestData)
-    dataOut = ensureSOC(data, Path);
-    % Second output not well-defined here; try to read EFC from TestInfo if present
+    dataOut       = ensureSOC(data, Path);
+    data          = dataOut;  % second output
     if isfield(dataOut, 'TestInfo') && isfield(dataOut.TestInfo, 'EFC')
         varargout{1} = dataOut.TestInfo.EFC;
     else
@@ -114,20 +142,23 @@ if isstruct(data) && isfield(data, 'TestData') && istabular_local(data.TestData)
     return;
 end
 
-% 4b) Main path: aging_data_table (table)
+% Main path, aging_data_table like table
 if ~istable(data)
     error('Unsupported content: expected a table (aging_data_table) or struct with TestData.');
 end
 
-selected = selectRowFromTable(data, identifier, checkUpNum);   % resolves CheckUp row
+% First output will be derived from this selected row
+selected = selectRowFromTable(data, identifier, checkUpNum);
 if isempty(selected)
-    dataOut = {};
+    dataOut      = {};
+    data         = data;
     varargout{1} = NaN;
     return;
 end
-[dataOut, vv] = extractPayloadFromRow(selected, nameTableColumnOCV, Path);  % your highlighted block, simplified & fixed
 
-% 4c) Attach TestInfo if not set by extract step and present in table columns
+[dataOut, vv] = extractPayloadFromRow(selected, nameTableColumnOCV, Path);
+
+% If we did not get TestInfo yet, try to attach from a column
 if ~isfield(dataOut, 'TestInfo')
     try
         vnames = selected.Properties.VariableNames;
@@ -136,47 +167,61 @@ if ~isfield(dataOut, 'TestInfo')
             dataOut.TestInfo = selected{1, idxTI};
         end
     catch
-        % optional, ignore if incompatible
+        % ignore if types are incompatible
     end
 end
 
-% 4d) Second output selection (ReturnColumn → EFC → RPT → CU → fallback)
+% Third output: priority ReturnColumn then EFC then RPT then CU then fallback
 if ~isempty(ReturnColName) && ismember(ReturnColName, selected.Properties.VariableNames)
     varargout{1} = selected.(ReturnColName)(1);
 else
-    varargout{1} = chooseSecondOutput(selected, checkUpNum, ~isempty(ReturnColName));
+    varargout{1} = chooseThirdOutput(selected, checkUpNum, ~isempty(ReturnColName));
 end
 
-% In case extractPayloadFromRow already found a preferred value (vv), prefer that only if ReturnColumn requested it
+% If extractPayloadFromRow ever returns its own preferred tag, allow override
 if ~isempty(vv) && ~isempty(ReturnColName)
     varargout{1} = vv;
 end
 
+% Second output is the full aging table
+data = data;
+
 end
+
 %% ========================= Helper functions =========================
 
 function identifier = normalizeIdentifier(identifier)
-% Normalize Identifier to {} or Nx2 cell of {Key,Value} (char)
+% Normalize Identifier to {} or N by 2 cell array of {Key, Value}
+% Keys are always chars, values are passed through
+
 if isstruct(identifier)
     fn = fieldnames(identifier);
     if isempty(fn)
         identifier = {};
     else
         vals = struct2cell(identifier);
-        identifier = [cellfun(@char, fn(:),  'UniformOutput', false), ...
-                      cellfun(@char, vals(:),'UniformOutput', false)];
+        n    = numel(fn);
+        tmp  = cell(n,2);
+        for k = 1:n
+            tmp{k,1} = char(fn{k});
+            tmp{k,2} = vals{k};
+        end
+        identifier = tmp;
     end
+
 elseif iscell(identifier)
     if isempty(identifier)
-        % ok
+        % ok, nothing to do
     elseif isvector(identifier) && numel(identifier) == 2
-        identifier = {char(identifier{1}), char(identifier{2})};
+        identifier = {char(identifier{1}), identifier{2}};
     elseif size(identifier,2) == 2
-        identifier(:,1) = cellfun(@char, identifier(:,1), 'UniformOutput', false);
-        identifier(:,2) = cellfun(@char, identifier(:,2), 'UniformOutput', false);
+        for k = 1:size(identifier,1)
+            identifier{k,1} = char(identifier{k,1});
+        end
     else
         error('Identifier must be 1x2 or Nx2 cell array of {Key,Value} pairs, or a struct.');
     end
+
 else
     if ~isempty(identifier)
         error('Identifier must be a cell array or struct.');
@@ -185,102 +230,217 @@ end
 end
 
 function requireCheckUp(n, msg)
+% Check that a CheckUp number is a finite scalar
+
 if isempty(n) || ~isscalar(n) || ~isfinite(n)
     error(msg);
 end
 end
 
 function fpath = pickMatInCU(cuFolder, fileNameFilter)
-% Pick a .mat inside a specific CUi folder (optionally filtered).
-if ~isfolder(cuFolder), error('CheckUp folder "%s" not found.', cuFolder); end
+% Pick a MAT file inside a specific CUi folder
+
+if ~isfolder(cuFolder)
+    error('CheckUp folder "%s" not found.', cuFolder);
+end
+
 matFiles = dir(fullfile(cuFolder, '*.mat'));
-if isempty(matFiles), error('No MAT in "%s".', cuFolder); end
+if isempty(matFiles)
+    error('No MAT file in "%s".', cuFolder);
+end
+
+% sort by name for deterministic choice
+[~, idxSort] = sort({matFiles.name});
+matFiles = matFiles(idxSort);
+
 if ~isempty(fileNameFilter)
-    matFiles = matFiles(contains({matFiles.name}, fileNameFilter));
+    keep = false(size(matFiles));
+    for k = 1:numel(matFiles)
+        if contains(matFiles(k).name, fileNameFilter)
+            keep(k) = true;
+        end
+    end
+    matFiles = matFiles(keep);
     if isempty(matFiles)
-        error('No MAT in "%s" matched filter "%s".', cuFolder, fileNameFilter);
+        error('No MAT file in "%s" matched filter "%s".', cuFolder, fileNameFilter);
     end
 end
+
 fpath = fullfile(cuFolder, matFiles(1).name);
 end
 
 function fpath = pickMatInFolder(folder, fileNameFilter)
-% Choose a single MAT in a plain folder (no CU*).
+% Pick a MAT file in a plain folder without CU* structure
+
 files = dir(fullfile(folder, '*.mat'));
 if isempty(files)
-    error('No MAT-file found in folder "%s".', folder);
+    error('No MAT file found in folder "%s".', folder);
 end
+
+% deterministic order
+[~, idxSort] = sort({files.name});
+files = files(idxSort);
+
 if numel(files) == 1 && isempty(fileNameFilter)
     fpath = fullfile(folder, files(1).name);
-    return
+    return;
 end
+
 if isempty(fileNameFilter)
-    error('Multiple MAT-files in "%s". Please provide FileNameFilter.', folder);
+    error('Multiple MAT files in "%s". Please provide FileNameFilter.', folder);
 end
-filtered = files(contains({files.name}, fileNameFilter));
+
+keep = false(size(files));
+for k = 1:numel(files)
+    if contains(files(k).name, fileNameFilter)
+        keep(k) = true;
+    end
+end
+filtered = files(keep);
+
 if isempty(filtered)
-    error('No MAT-file in "%s" matched filter "%s".', folder, fileNameFilter);
+    error('No MAT file in "%s" matched filter "%s".', folder, fileNameFilter);
 elseif numel(filtered) > 1
-    error('Multiple MAT-files in "%s" matched filter "%s". Refine the filter.', folder, fileNameFilter);
+    error('Multiple MAT files in "%s" matched filter "%s". Refine the filter.', folder, fileNameFilter);
 end
+
 fpath = fullfile(folder, filtered(1).name);
 end
 
 function selected = selectRowFromTable(T, identifier, checkUpNum)
-% Apply Identifier AND-filter (if given), then select the row for the requested CheckUp.
+% Select one row from an aging_data_table
+%
+% Steps
+%   1) apply Identifier pairs as AND filter
+%   2) if multiple rows remain, use CU or CheckUp like column
+%   3) if no CU like column exists, use CheckUp as row index
+%
+% CU like column can be numeric or string labels like "CU1" or "CU01"
+
+% 1) apply Identifier filter if given
 if ~isempty(identifier)
     mask = true(height(T),1);
     for r = 1:size(identifier,1)
-        col = identifier{r,1}; val = identifier{r,2};
+        col = identifier{r,1};
+        val = identifier{r,2};
+
         if ~ismember(col, T.Properties.VariableNames)
             error('Identifier column "%s" not found.', col);
         end
+
         colData = T.(col);
-        if iscellstr(colData) || isstring(colData) || ischar(colData) || iscategorical(colData)
+
+        % text like columns, including cell arrays of string or char
+        if iscell(colData)
+            % convert both sides to string for comparison
+            colStr = string(colData);
+            valStr = string(val);
+            mask   = mask & (colStr == valStr);
+
+        elseif isstring(colData) || ischar(colData) || iscategorical(colData)
             mask = mask & (string(colData) == string(val));
+
+        % numeric or logical columns
         elseif isnumeric(colData) || islogical(colData)
-            if ischar(val) || isstring(val)
-                v = str2double(val);
-                if isnan(v), error('Identifier value for numeric column "%s" must be numeric(-string).', col); end
+            if ischar(val) || isstring(val) || iscategorical(val)
+                v = str2double(string(val));
+                if isnan(v)
+                    error('Identifier value for numeric column "%s" must be numeric or numeric string.', col);
+                end
                 val = v;
             end
             mask = mask & (colData == val);
+
         else
-            error('Column "%s" has unsupported type %s.', col, class(colData));
+            error('Identifier column "%s" has unsupported type %s.', col, class(colData));
         end
     end
+
     filtered = T(mask,:);
     if isempty(filtered)
-        error('No rows matched the provided Identifier pairs (AND-combined).');
+        error('No rows matched the provided Identifier pairs.');
     end
 else
     filtered = T;
 end
 
+
+% If there is exactly one row and no CheckUp was requested, return it
 if height(filtered) == 1 && isempty(checkUpNum)
     selected = filtered(1,:);
-    return
+    return;
 end
 
-% Try CU/CheckUp columns first
+% 2) look for CU like columns
 possibleCUCols = {'CU','CUs','CheckUp','CheckUps','CheckUpNumber','CUNumber','Check_Up'};
 cuCol = '';
-for c = possibleCUCols
-    if ismember(c{1}, filtered.Properties.VariableNames), cuCol = c{1}; break; end
+
+for c = 1:numel(possibleCUCols)
+    if ismember(possibleCUCols{c}, filtered.Properties.VariableNames)
+        cuCol = possibleCUCols{c};
+        break;
+    end
 end
 
 if ~isempty(cuCol)
-    requireCheckUp(checkUpNum, 'Table has CU/CheckUp column but no "CheckUp" given.');
-    rowIdx = find(filtered.(cuCol) == checkUpNum, 1, 'first');
+    % We need a CheckUp number in this case
+    requireCheckUp(checkUpNum, 'Table has CU or CheckUp column but no "CheckUp" number given.');
+
+    colData  = filtered.(cuCol);
+    rowIdx   = [];
+
+    if isnumeric(colData) || islogical(colData)
+        % direct numeric compare
+        rowIdx = find(colData == checkUpNum, 1, 'first');
+
+    else
+        % robust selection for string labels like "CU1", "CU01"
+        labels = string(colData);
+        % first try exact numeric string
+        pattern1 = sprintf('^%d$', checkUpNum);
+        % then patterns like CU1 or CU01 or CU_1
+        pattern2 = sprintf('^CU[_ ]*0*%d$', checkUpNum);
+
+        for i = 1:numel(labels)
+            if ~isempty(regexp(labels(i), pattern1, 'once'))
+                rowIdx = i;
+                break;
+            end
+        end
+        if isempty(rowIdx)
+            for i = 1:numel(labels)
+                if ~isempty(regexp(labels(i), pattern2, 'once'))
+                    rowIdx = i;
+                    break;
+                end
+            end
+        end
+
+        % final fallback: extract first integer from label and compare
+        if isempty(rowIdx)
+            for i = 1:numel(labels)
+                digitsMatch = regexp(labels(i), '\d+', 'match', 'once');
+                if ~isempty(digitsMatch)
+                    valNum = str2double(digitsMatch);
+                    if valNum == checkUpNum
+                        rowIdx = i;
+                        break;
+                    end
+                end
+            end
+        end
+    end
+
     if isempty(rowIdx)
         warning('Requested CheckUp %d not found in column "%s".', checkUpNum, cuCol);
         selected = {};
     else
         selected = filtered(rowIdx,:);
     end
-    
+
 else
-    requireCheckUp(checkUpNum, 'No CU column present; using row index requires "CheckUp".');
+    % 3) no CU or CheckUp column, use CheckUp as row index
+    requireCheckUp(checkUpNum, 'No CU or CheckUp column present; using row index requires "CheckUp".');
     if checkUpNum > height(filtered)
         warning('Requested CheckUp %d exceeds number of rows (%d).', checkUpNum, height(filtered));
         selected = {};
@@ -291,179 +451,353 @@ end
 end
 
 function [outStruct, retOverride] = extractPayloadFromRow(selected, nameTableColumnOCV, Path)
-% Implement the functionality you highlighted, but simpler and correct.
-% Strategy:
-%   1) If nameTableColumnOCV exists and is tabular → use it.
-%   2) Else first tabular column → use it.
-%   3) Else first struct with .TestData(tabular) → use it.
-%   4) Else treat selected as a "flat" row → normalize to struct with SOC/U/MaxAhStep.
+% Extract OCV payload from a single selected row
 %
-% Returns:
-%   outStruct: struct with at least .TestData (for 1-3) or normalized fields (4)
-%   retOverride: [] always here (kept for compatibility with an optional future override)
+% Order
+%   1) explicit OCV column if it exists and is table or timetable
+%   2) first table or timetable column in row
+%   3) first struct with TestData as table or timetable
+%   4) interpret row as flat SOC or U or MaxAhStep container
 
 retOverride = [];
 
 rowData   = table2cell(selected(1,:));
 varNamesS = selected.Properties.VariableNames;
 
-% --- Prefer explicit column, if provided ---
+% candidate columns to inspect first
 candidates = 1:numel(rowData);
 if ~isempty(nameTableColumnOCV)
     idx = find(strcmp(varNamesS, nameTableColumnOCV), 1);
     if ~isempty(idx)
         candidates = idx;
     else
-        warning('nameTableColumnOCV "%s" not found. Falling back to auto-detect.', nameTableColumnOCV);
+        warning('import_OCV:MissingOCVColumn', ...
+            'nameTableColumnOCV "%s" not found. Falling back to auto detect.', nameTableColumnOCV);
     end
 end
 
-% 1) tabular column?
+% 1) explicit or first tabular column
 idxTab = [];
 for k = candidates
-    if istabular_local(rowData{k}), idxTab = k; break; end
+    if istabular_local(rowData{k})
+        idxTab = k;
+        break;
+    end
 end
 if isempty(idxTab)
-    % 2) any tabular column in the row?
     for k = 1:numel(rowData)
-        if istabular_local(rowData{k}), idxTab = k; break; end
+        if istabular_local(rowData{k})
+            idxTab = k;
+            break;
+        end
     end
 end
 if ~isempty(idxTab)
     outStruct = struct('TestData', rowData{idxTab});
     outStruct = ensureSOC(outStruct, Path);
-    return
+    return;
 end
 
-% 3) struct with .TestData (table/timetable)?
+% 2) struct with TestData field
 idxStruct = [];
 for k = candidates
     v = rowData{k};
     if isstruct(v) && isfield(v,'TestData') && istabular_local(v.TestData)
-        idxStruct = k; break;
+        idxStruct = k;
+        break;
     end
 end
 if isempty(idxStruct)
     for k = 1:numel(rowData)
         v = rowData{k};
         if isstruct(v) && isfield(v,'TestData') && istabular_local(v.TestData)
-            idxStruct = k; break;
+            idxStruct = k;
+            break;
         end
     end
 end
 if ~isempty(idxStruct)
     outStruct = ensureSOC(rowData{idxStruct}, Path);
-    return
+    return;
 end
 
-% 4) No tabular/struct payload → interpret as flat row with SOC/U/MaxAhStep
-outStruct = normalizeTableOrStruct(selected);
+% 3) flat row, treat as container of SOC and U and MaxAhStep type data
+outStruct = normalizeFlatRow(selected);
 end
 
-function v = chooseSecondOutput(selected, checkUpNum, warnedForReturnCol)
-% ReturnColumn → EFC → RPT → CU → fallback
+function tag = chooseThirdOutput(selected, checkUpNum, warnedForReturnCol)
+% Decide tag for third output
+%
+% Priority
+%   EFC like
+%   RPT like
+%   CU like
+%   Fallback NaN or CheckUp index
+
 E = {'EFC','EffCap','EffectiveCapacity'};
 R = {'RPT','ReProTest','ReferencePerformanceTest'};
 C = {'CU','CUs','CheckUp','CheckUps','CheckUpNumber','CUNumber','Check_Up'};
 
 if istable(selected)
-    x = firstHit(selected, E);
-    if ~isempty(x), v = x; return; end
-
-    x = firstHit(selected, R);
-    if ~isempty(x)
-        v = x;
-        if ~warnedForReturnCol, warning('EFC column not found. Returned RPT instead.'); end
-        return
+    value = firstHit(selected, E);
+    if ~isempty(value)
+        tag = value;
+        return;
     end
 
-    x = firstHit(selected, C);
-    if ~isempty(x)
-        v = x;
-        if ~warnedForReturnCol, warning('EFC or RPT column not found. Returned CU instead.'); end
-        return
+    value = firstHit(selected, R);
+    if ~isempty(value)
+        tag = value;
+        if ~warnedForReturnCol
+            warning('import_OCV:UseRPT', 'EFC column not found. Returned RPT instead.');
+        end
+        return;
+    end
+
+    value = firstHit(selected, C);
+    if ~isempty(value)
+        tag = value;
+        if ~warnedForReturnCol
+            warning('import_OCV:UseCU', 'EFC or RPT column not found. Returned CU instead.');
+        end
+        return;
     end
 
     if height(selected) == 1
-        v = NaN;
-        if ~warnedForReturnCol, warning('No EFC/RPT/CU column found; returned NaN.'); end
+        tag = NaN;
+        if ~warnedForReturnCol
+            warning('import_OCV:NoTag', 'No EFC, RPT or CU column found; returned NaN.');
+        end
     else
-        v = checkUpNum;
-        if ~warnedForReturnCol, warning('No EFC/RPT column found; returned CU (by index).'); end
+        tag = checkUpNum;
+        if ~warnedForReturnCol
+            warning('import_OCV:UseIndex', 'No EFC or RPT column found; returned CheckUp number as tag.');
+        end
     end
 else
-    v = NaN;
+    tag = NaN;
 end
 end
 
-function x = firstHit(T, candidates)
-x = [];
-hit = intersect(candidates, T.Properties.VariableNames, 'stable');
-if ~isempty(hit), x = T.(hit{1})(1); end
+function value = firstHit(T, candidates)
+% Return first existing column from candidates list, first row
+
+value = [];
+for i = 1:numel(candidates)
+    cand = candidates{i};
+    if ismember(cand, T.Properties.VariableNames)
+        value = T.(cand)(1);
+        return;
+    end
+end
 end
 
 function S = ensureSOC(S, Path)
-% Append SOC to S.TestData if missing. Handles table/timetable.
-if ~isfield(S,'TestData') || ~istabular_local(S.TestData), return; end
-if ismember('SOC', S.TestData.Properties.VariableNames), return; end
+% Ensure that TestData has SOC column
+%
+% Steps
+%   1) normalize OCV column names (aliases for U, Ah_Step, SOC)
+%   2) if SOC is missing and U and Ah_Step exist, compute SOC
+
+if ~isfield(S,'TestData') || ~istabular_local(S.TestData)
+    return;
+end
+
+% rename aliases and warn if non canonical names were used
+S.TestData = unifyOCVColumnNames(S.TestData, Path);
+
+if ismember('SOC', S.TestData.Properties.VariableNames)
+    return;
+end
+
+if ~ismember('Ah_Step', S.TestData.Properties.VariableNames) || ...
+   ~ismember('U', S.TestData.Properties.VariableNames)
+    warning('import_OCV:MissingColumns', ...
+        'File "%s": could not find both "Ah_Step" and "U" after name normalization. SOC will not be added.', Path);
+    return;
+end
+
 try
     AhStep = S.TestData.Ah_Step;
     U      = S.TestData.U;
     S.TestData.SOC = getSOC(AhStep, U);
 catch ME
-    warning('Could not calculate SOC for file "%s": %s', Path, ME.message);
+    warning('import_OCV:SocFailure', 'Could not calculate SOC for file "%s": %s', Path, ME.message);
 end
 end
 
-function outStruct = normalizeTableOrStruct(data)
-% Create a minimal uniform struct from a flat table (or struct) with SOC/U/MaxAhStep.
-valid.SOC       = {'SOC','StateOfCharge','State_of_Charge'};
-valid.U         = {'U','V','U_','V_','E_','Potential','OCP','OCV','Voltage'};
-valid.MaxAhStep = {'MaxAhStep','AhStep','max_ahstepsize','CapacityStep','Capacity_Step'};
+function T = unifyOCVColumnNames(T, Path)
+% Map OCV related column names to canonical U, Ah_Step, SOC
+%
+% Aliases for U
+%   V, U_, V_, E_, Potential, OCP, OCV, Voltage, U_V
+%
+% Aliases for Ah_Step
+%   AhStep, Ahstep, AH_Step, Ah_Step_, Capacity_Step, CapacityStep,
+%   ah_step, ah_Step, ahstep
+%
+% Aliases for SOC
+%   StateOfCharge, State_of_Charge
 
-if isstruct(data), names = fieldnames(data); else, names = data.Properties.VariableNames; end
-outStruct = struct();
-for f = fieldnames(valid)'
-    key = f{1}; cands = valid.(key); match = [];
-    for c = cands
-        cand = c{1};
-        if numel(cand) == 1
-            hit = find(strcmpi(names, cand), 1, 'first');
-        else
-            hit = find(startsWith(names, cand, 'IgnoreCase', true), 1, 'first');
+if ~istabular_local(T)
+    return;
+end
+
+vnames = T.Properties.VariableNames;
+
+alias.U       = {'V','U_','V_','E_','Potential','OCP','OCV','Voltage','U_V'};
+alias.Ah_Step = {'AhStep','Ahstep','AH_Step','Ah_Step_','Capacity_Step','CapacityStep', ...
+                 'ah_step','ah_Step','ahstep'};
+alias.SOC     = {'StateOfCharge','State_of_Charge'};
+
+canonList = fieldnames(alias);
+
+for idx = 1:numel(canonList)
+    canon = canonList{idx};
+    if any(strcmp(canon, vnames))
+        continue;
+    end
+    candList = alias.(canon);
+    hitIdx   = [];
+    hitName  = '';
+    for j = 1:numel(candList)
+        cand = candList{j};
+        idxHit = find(strcmpi(vnames, cand), 1, 'first');
+        if ~isempty(idxHit)
+            hitIdx  = idxHit;
+            hitName = vnames{idxHit};
+            break;
         end
-        if ~isempty(hit), match = hit; break; end
     end
-    if isempty(match)
-        if istable(data), tdesc = 'table column'; else, tdesc = 'struct field'; end
-        error('No %s for "%s". Allowed: %s', tdesc, key, strjoin(cands, ', '));
-    end
-    outStruct.(key) = data.(names{match});
-    if strcmp(key,'MaxAhStep')
-        vals = outStruct.MaxAhStep; vals = vals(~isnan(vals));
-        outStruct.MaxAhStep = tern(~isempty(vals), max(vals), NaN);
+    if ~isempty(hitIdx)
+        T.Properties.VariableNames{hitIdx} = canon;
+        vnames{hitIdx} = canon;
+        warning('import_OCV:AliasColumnName', ...
+            'In file "%s", column "%s" is treated as "%s".', Path, hitName, canon);
     end
 end
 end
 
-function y = tern(cond, a, b)
-if cond, y = a; else, y = b; end
+function outStruct = normalizeFlatRow(data)
+% Interpret a one row table or struct without nested tabular payload
+% and normalize names for SOC, U and MaxAhStep
+
+valid.SOC       = {'SOC','soc','StateOfCharge','State_of_Charge'};
+valid.U         = {'U','V','U_','V_','E_','Potential','potential','OCP','ocp', ...
+                   'OCV','ocv','Voltage','voltage','U_V'};
+valid.MaxAhStep = {'MaxAhStep','maxahstep','AhStep','Ah_Step','ah_step','ah_Step', ...
+                   'max_ahstepsize','CapacityStep','capacitystep', 'Capacity_Step', ...
+                   'capacity_step', 'capStep', 'capstep', 'CapStep'};
+
+if isstruct(data)
+    names = fieldnames(data);
+    isTab = false;
+else
+    names = data.Properties.VariableNames;
+    isTab = true;
+end
+
+outStruct = struct();
+fieldsValid = fieldnames(valid);
+
+for idxKey = 1:numel(fieldsValid)
+    key   = fieldsValid{idxKey};
+    cands = valid.(key);
+    matchIdx  = [];
+    usedName  = '';
+
+    for idxCand = 1:numel(cands)
+        cand = cands{idxCand};
+        hit  = find(strcmpi(names, cand), 1, 'first');
+        if ~isempty(hit)
+            matchIdx = hit;
+            usedName = names{hit};
+            break;
+        end
+    end
+
+    if isempty(matchIdx)
+        if isTab
+            tdesc = 'table column';
+        else
+            tdesc = 'struct field';
+        end
+        error('No %s for "%s". Allowed names are %s', tdesc, key, strjoin(cands, ', '));
+    end
+
+    if ~strcmp(usedName, key)
+        warning('import_OCV:AliasVarName', ...
+            'Variable "%s" is treated as "%s".', usedName, key);
+    end
+
+    if isTab
+        value = data.(usedName);
+    else
+        value = data.(usedName);
+    end
+
+    outStruct.(key) = value;
+
+    if strcmp(key,'MaxAhStep')
+        vals = outStruct.MaxAhStep;
+        if iscell(vals)
+            % Look for first numeric entry in cell array
+            numericVals = [];
+            for k = 1:numel(vals)
+                if isnumeric(vals{k})
+                    numericVals = vals{k};
+                    break;
+                end
+            end
+            vals = numericVals;
+        end
+        if isnumeric(vals)
+            valsLocal = vals(~isnan(vals));
+            if ~isempty(valsLocal)
+                outStruct.MaxAhStep = max(valsLocal);
+            else
+                outStruct.MaxAhStep = NaN;
+            end
+        else
+            warning('import_OCV:MaxAhStepNonNumeric', ...
+                'MaxAhStep values are not numeric; storing NaN.');
+            outStruct.MaxAhStep = NaN;
+        end
+    end
+end
 end
 
 function tf = istabular_local(x)
+% True for tables and timetables
+
 tf = istable(x) || istimetable(x);
 end
 
 function SOC = getSOC(AhStep, U, varargin)
-% Works only for curves in one direction.
-[minAh, maxAh] = bounds(abs(AhStep));
-if mean(AhStep) < 0, AhStep = AhStep + maxAh; end
-SOC = nan(length(AhStep),1);
-for i = 1:length(AhStep)
-    SOC(i) = (AhStep(i) - minAh) / maxAh;
+% Simple SOC from Ah_Step
+%
+% This assumes a single direction curve
+% SOC is mapped linearly from min(AhStep) to max(AhStep)
+
+[minAh, maxAh] = bounds(AhStep);
+if maxAh == minAh
+    SOC = zeros(size(AhStep));
+else
+    SOC = (AhStep - minAh) ./ (maxAh - minAh);
 end
-plaus = mean(diff(SOC)) / mean(diff(U));
-if plaus < 0 && (max(U)-min(U) > 0.5)
-    warning('SOC is wrong. With increasing voltage SOC is decreasing or vice versa!');
+
+% Sanity check: if voltage span is large and SOC and U move in opposite directions, warn
+du = diff(U);
+ds = diff(SOC);
+if ~isempty(du) && ~isempty(ds)
+    meanDu = mean(du);
+    meanDs = mean(ds);
+    if meanDu ~= 0
+        plaus = meanDs / meanDu;
+        if plaus < 0 && (max(U) - min(U) > 0.5)
+            warning('import_OCV:SocDirection', ...
+                'SOC is possibly wrong. With increasing voltage SOC is decreasing or vice versa.');
+        end
+    end
 end
 end

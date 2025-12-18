@@ -17,6 +17,7 @@ function [myData, reconSOC, fcU_model, Q_DVA_meas, DVA_smooth_meas, ...
 %> Date: 2025-03-11
 %
 % OVERVIEW:
+%   * Core solver used by the DMA framework to fit electrode parameters per CU.
 %   * Combines (blends) anode and cathode data to reconstruct a full-cell OCV.
 %   * Uses user-defined or pre-computed half-cell and full-cell data (either
 %     in a struct or cell-array format, or a .mat path).
@@ -66,7 +67,7 @@ function [myData, reconSOC, fcU_model, Q_DVA_meas, DVA_smooth_meas, ...
 %     - actual capacity from the input data (e.g., fullCellData).
 %   params
 %     - optimised parameters [alpha_an, beta_an, alpha_cat, beta_cat,
-%       (gamma_an_blend2), (gamma_ca_blend2 future), (inhom_an), (inhom_cat)].
+%       (gamma_an_blend2), (gamma_ca_blend2), (inhom_an), (inhom_cat)].
 %   algorithmOut
 %     - echo of the chosen algorithm.
 %   weightOCV_Out
@@ -245,8 +246,8 @@ inhomInit = min(inhomInit, inhomUB);      % clamp initial guess inside bounds
 % 7) Build full 8 parameter vectors, then reduce to active subset
 % -----------------------------------------------------------------------
 % Full fixed order:
-% [alpha_an, beta_an, alpha_cat, beta_cat, gamma_an_blend2, gamma_ca_blend2, inhom_an, inhom_ca]
-% gamma_ca_blend2 (slot 6) is reserved for a future cathode blend release.
+% [alpha_an, beta_an, alpha_cat, beta_cat, gamma_an_blend2, gamma_ca_blend2, 
+% inhom_an, inhom_ca];  
 
 fullInit = zeros(1, 8);
 fullLB   = zeros(1, 8);

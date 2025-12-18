@@ -142,7 +142,8 @@ if ~isempty(rawSOC) && ~isempty(rawU)
             if curveIsBlend2
                 % Blend2 curves keep all points but must still warn
                 warning('parseDataInput:NonMonotonicSOC', ...
-                    'SOC for "%s" data is non-monotonic; order kept.', dataType);
+                    ['SOC for "%s" data is non-monotonic; order kept. ' ...
+                    '-> This is not a problem in case of blend electrodes!'], dataType);
             else
                 % For all other curves remove offending points
                 [rawSOC, rawU, nRemoved] = removeNonMonotonicSOCPoints(rawSOC, rawU, dataType);
