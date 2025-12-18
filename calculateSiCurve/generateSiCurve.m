@@ -57,33 +57,52 @@ PlotFlag          = true;
 
 % ---- Parse varargin -----------------------------------------------------
 for k = 1:2:numel(varargin)
-    key = varargin{k};  val = varargin{k+1};
-    switch true
-        case contains(key,'blend','IgnoreCase',true)
-            BlendPath = string(val);
-        case contains(key,{'save','dest'},'IgnoreCase',true)
-            SavePath = string(val);
-        case contains(key,'graphite','IgnoreCase',true) && ...
-             contains(key,'path','IgnoreCase',true)
-            GraphitePath = string(val);
-        case contains(key,'graphite','IgnoreCase',true)
-            GraphiteSource = capitalize(val);
-        case contains(key,{'lith','dir'},'IgnoreCase',true)
-            LithDirection = lower(string(val));
-        case contains(key,'gamma','IgnoreCase',true)
-            GammaSi = double(val);
-        case contains(key,'filter','IgnoreCase',true)
-            filterInputData = logical(val);
-        case contains(key,{'smooth','window'},'IgnoreCase',true)
-            smoothWindow = double(val);
-        case contains(key,{'smooth','bad','qs'},'IgnoreCase',true)
-            smoothBadQS = logical(val);         
-        case contains(key,'plot','IgnoreCase',true)
-            PlotFlag = logical(val);
-        otherwise
-            warning('Unknown parameter “%s” ignored.',key);
+    key = varargin{k};
+    val = varargin{k+1};
+
+    keyStr = lower(char(key));  % work with lower case char
+
+    if contains(keyStr, 'blend')
+        BlendPath = string(val);
+
+    elseif contains(keyStr, 'save') && contains(keyStr, 'path')
+        % requires both "save" and "path" in the key, e.g. "SavePath"
+        SavePath = string(val);
+
+    elseif contains(keyStr, 'graphite') && contains(keyStr, 'path')
+        % explicit graphite file
+        GraphitePath = string(val);
+
+    elseif contains(keyStr, 'graphite')
+        % graphite source selector
+        GraphiteSource = capitalize(val);
+
+    elseif contains(keyStr, 'lith') && contains(keyStr, 'dir')
+        % e.g. "LithDirection"
+        LithDirection = lower(string(val));
+
+    elseif contains(keyStr, 'gamma')
+        GammaSi = double(val);
+
+    elseif contains(keyStr, 'filter')
+        filterInputData = logical(val);
+
+    elseif contains(keyStr, 'smooth') && contains(keyStr, 'window')
+        % smooth window length for sgolay
+        smoothWindow = double(val);
+
+    elseif contains(keyStr, 'smooth') && contains(keyStr, 'bad') && contains(keyStr, 'qs')
+        % SmoothBadQS flag
+        smoothBadQS = logical(val);
+
+    elseif contains(keyStr, 'plot')
+        PlotFlag = logical(val);
+
+    else
+        warning('Unknown parameter "%s" ignored.', keyStr);
     end
 end
+
 
 %% 03 PATHS
 thisDir  = fileparts(mfilename('fullpath'));          
@@ -172,7 +191,7 @@ if strlength(BlendPath)==0 || isnan(GammaSi) || strlength(SavePath)==0
     y0 = y0 - dy;
     uicontrol(d,'Style','text','Units','normalized', ...
         'Position',[0.02 y0 0.96 0.08], ...
-        'String','Kuecher or Schmitt recommended – P45B ≈ 0.23 γ-Si', ...
+        'String','Kuecher or Schmitt recommended – P45B ≈ 0.245 γ-Si', ...
         'FontAngle','italic');
 
     % -- OK / Cancel ------------------------------------------------------

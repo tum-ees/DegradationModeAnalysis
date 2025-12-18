@@ -10,6 +10,7 @@ function [Data, s] = main_DMA(userSettingsOutside)
 %> Date: 2025-11-12
 %>
 %> OVERVIEW:
+%>   * Entry point of the DMA framework; orchestrates analysis across CUs.
 %>   * Performs a Degradation Mode Analysis (DMA) across checkup points (CU). 
 %>   * Loads/constructs half-cell (cathode) data + full-cell data,
 %>     then calls `dma_core` for each CU to fit parameters.
@@ -74,13 +75,11 @@ s.CalendarOrCyclic = 1;
 %       * Calendar (0): label is the check-up number shown in plots.
 %       * Cyclic   (1): label is the EFC shown in plots.
 %   - Important mapping:
-%       * Data storage keys are always "CU1", "CU2", ..., "CUN" (index i).
-%       * Folder mode (s.inputIsAging_data_table = 0) expects directories
-%         named exactly "CU1", "CU2", ..., and ignores numeric s.nCUs values
-%         for folder names.
-%       * Table mode (s.inputIsAging_data_table = 1) selects the i-th CU row
-%         by CU index i (via a CU/CheckUp column if present, else by row
-%         position). The numeric contents of s.nCUs(i) are not used for lookup;
+%       * A table containing all pOCVs over aging is needed 
+%         (see the minimum working example as reference).
+%       * The i-th CU row is selected from the table by CU index i 
+%         (via a CU/CheckUp/RPT column if present, else by row position). 
+%         The numeric contents of s.nCUs(i) are not used for lookup;
 %         they are used later only for labelling/plotting.
 %
 % Fitting order (forward vs. reverse) is inferred from the order of s.nCUs:
@@ -106,10 +105,7 @@ if exist('userSettingsOutside','var') && ...
     s.direction = userSettingsOutside.direction;
 end
 
-% 5) Define how the algorithm can find your cell (only one is used)
-%  -> is your input an aging_data_table (default) or a folder structure
-s.inputIsAging_data_table = 1;
-%  -> case 1) aging_data_table as input? (recommended)
+% 5) Define how the algorithm can find your cell
 % tell main_DMA how to find all lines in the table of this battery with the 
 % right settings (e.g. 'Battery_serial', '102'; and TBegin = 25)
 s.tableFilter(1,:) = {'Battery_serial'; '23'};
@@ -123,13 +119,6 @@ if strcmp(s.direction, 'charge')
 else
     s.nameTableColumnOCV = 'Testdata_pOCV_DCH';
 end
-
-% 
-%  -> case 2) folder secture with CU1, CU2, etc. (currently only naming
-%  of 'CU'+ number is supported (see below to change!)
-% tell which part of the file name identifies your cell (file name contains
-% e.g. FR23);
-s.fileNameFilter = '23';
 
 % 6) Specify how many (successfull) optimizations should pe performed per
 % cell and per CU -> reqAccepted is the number of optimizations with an
@@ -183,7 +172,7 @@ s.weightICA        = 0;     % weighting for the ICA region
 s.ROI_DVA_min = 0.1;
 % upper boundary of DVA fitting region (e.g. 0.9 = 90% SOC)
 s.ROI_DVA_max = 0.9; 
-% lower boundary of ICA fitting region (e.g. 0.13 = 13% SOC)
+% lower boundary of ICA fitting region (e.g. 0.10 = 10% SOC)
 s.ROI_ICA_min = 0.13;
 % upper boundary of ICA fitting region (e.g. 0.9 = 90% SOC)
 s.ROI_ICA_max = 0.9; 
@@ -202,7 +191,7 @@ s.ROI_OCV_max = 1;
 % boundaries -> this assures the physically correct solution is within the
 % allowed boundaries
 % Default case:
-%   s.lowerBoundaries          = [0.2, -1.0, 0.2, -2.0];
+%   s.lowerBoundaries          = [0.8, -1.0, 0.8, -1.0];
 %   s.upperBoundaries          = [2.0,  0.2, 2.0,  0.2];
 s.lowerBoundaries          = [1, -1.0, 1, -1.0];
 s.upperBoundaries          = [2.0,  0, 2.1,  0];
@@ -383,15 +372,6 @@ for i = idxRange
         allowAnodeInhomogeneity = s.allowAnodeInhomogeneity;  % restore setting
         allowCathodeInhomogeneity = s.allowCathodeInhomogeneity;
     end
-    
-    % go into the specific folder if needed
-    if ~s.inputIsAging_data_table
-        % Define current path and get full-cell data
-        s.pathAgingStudy = regexprep(s.pathAgingStudy, '[\\/]', filesep);
-        currentPath = fullfile(char(s.pathAgingStudy), sprintf('CU%d', i));
-    else
-        currentPath = s.pathAgingStudy;
-    end
 
     if exist('dataStore','var') && isfield(dataStore,'agingDataTable')... 
         && ~isempty(dataStore.agingDataTable)
@@ -402,9 +382,9 @@ for i = idxRange
 
 
     [fullCellData, toggleMissingData, dataStore] = ...
-        get_fullcell_data(s, currentPath, cellIdentifier_keys, ...
+        get_fullcell_data(s, s.pathAgingStudy, cellIdentifier_keys, ...
         cellIdentifier_values, s.nameTableColumnOCV, ...
-        s.fileNameFilter, i, vararg_get_fullcell_data{:});
+        i, vararg_get_fullcell_data{:});
 
     % if no Data is available for a certain CU/RPT skip this CU/RPT
     if toggleMissingData

@@ -1,7 +1,7 @@
 <div align="center">
   <h1>DegradationModeAnalysis</h1>
 
-  Degradation mode analysis tool + tool to calculate silicon OCPs
+  Degradation mode analysis framework + tool to calculate silicon OCPs
 
   <br>
 
@@ -36,10 +36,10 @@
 
 
 
-This tool allows the degradation mode analysis of lithium- and sodium-ion batteries. 
+This framework allows the degradation mode analysis of lithium- and sodium-ion batteries. 
 In case of a blend anode, the silicon OCP can be selected from a pool of literature OCPS.
 We recommend, however, to calculate the silicon OCP based on a measured blend OCP, which can be
-done by a second tool designed for this purpose. 
+done by a complementary tool designed for this purpose. 
 
 <br>
 
@@ -72,8 +72,7 @@ and is robust even when <span style="font-style:italic;">γ</span><sub>Si</sub>
 
 
 
-* Data handling: pOCV curves need to be stored either in one table or in different folders, set <code>s.inputIsAging_data_table</code> 
-(1 for table mode using <code>s.tableFilter</code> and <code>s.nameTableColumnOCV</code>, 0 for folder mode with RPT1, RPT2 ... or analogous naming)
+* Data handling: all pOCV curves need to be stored in a table (see MWE as reference).
 
 * Resampling: <code>s.dataLength</code> for resampling in SOC space. <code>s.smoothingPoints</code> for LOWESS smoothing of input curves.
 
@@ -131,8 +130,7 @@ These OCPs originate from published sources. Add proper citations if you use the
 </details>
 
 <h2>🎖️ Acknowledgments</h2>
-We would like to thank Johannes Natterer for providing us with a data set of a cyclic aged P45B cell of his aging study for 
-testing the tools. In addition, we thank Maximilian Leitenstern for support in migration to GitHub.
+We would like to thank Johannes Natterer for providing us with a data set of a cyclic aged P45B cell of his aging study for testing the framework. In addition, we thank Maximilian Leitenstern for support in migration to GitHub.
 
 
 <h2>📽️ Minimal workable example</h2>
@@ -156,5 +154,5 @@ Germany
 
 
 <h2>✒️ Citation</h2>
-This tool is published alongside with a open-source publication of Mathias Rehm in year 2026. In case you write any kind of publication, we kindly ask you to cite this publication. 
-Please know, that an earlier version of this tool was used and validated to precisely determine the degradation modes for commerical sodium batteries by Mathias Rehm in another publication in 2026.
+This framework is published alongside with a open-source publication of Mathias Rehm et al. in year 2026. In case you write any kind of publication, we kindly ask you to cite this publication. 
+Please know, that an earlier version of this framework was used and validated to precisely determine the degradation modes for commerical sodium batteries by Mathias Rehm et al. in another publication in 2026.

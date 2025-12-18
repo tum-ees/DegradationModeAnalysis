@@ -1,5 +1,5 @@
 function [fullCellData, toggleMissingData, fullTableOut] = get_fullcell_data(s, currentPath, ...
-    cellIdentifier_keys, cellIdentifier_values, nameTableColumnOCV, fileNameFilter, i, varargin)
+    cellIdentifier_keys, cellIdentifier_values, nameTableColumnOCV, i, varargin)
 %> Authors : Mathias Rehm
 %> E-mail : mathias.rehm@tum.de
 %> Date    : 9/12/2025
@@ -18,7 +18,8 @@ toggleMissingData = false;
 cuLabel = sprintf('CU%d', i);
 
 % extract variables
-inputIsAging_data_table = s.inputIsAging_data_table;
+inputIsAging_data_table = 1; % always 1; main_DMA only supports table mode
+% -> future release may support folder mode as well
 
 % Build Identifier argument (accept {}, 1xN or Nx1 cells as inputs paired to Nx2)
 identifierArg = {};
@@ -81,6 +82,8 @@ if isempty(files)
 end
 
 %% 3) BasePath mode (no CU folders): select file and import
+% basePath and currentPath equal -> only one file as input (=
+% agingDataTable)
 if strcmp(currentPath, basePath)
     if numel(files) == 1
         if inputIsSingleFile
@@ -89,18 +92,22 @@ if strcmp(currentPath, basePath)
             matFilePath = fullfile(currentPath, files(1).name);
         end
     else
-        if isempty(fileNameFilter)
-            error('Multiple MAT-files found in basePath. Please specify a FileNameFilter.');
-        end
-        filteredFiles = files(contains({files.name}, fileNameFilter));
-        if isempty(filteredFiles)
-            error('No MAT-file matched the FileNameFilter in basePath.');
-        elseif numel(filteredFiles) > 1
-            error('Multiple MAT-Files matched the FileNameFilter in basePath. Please refine the filter.');
-        end
-        matFilePath = fullfile(currentPath, filteredFiles(1).name);
+        error(['Multiple MAT-files found in pathAgingStudy. Currently, only one MAT-file (table) is supported. ' ...
+        'Wait for future releases or add the missing functionality yourself.']);
+        % fileNameFilter = s.fileNameFilter;
+        % if isempty(fileNameFilter)
+        %     error('Multiple MAT-files found in basePath. Please specify a FileNameFilter.');
+        % end
+        % filteredFiles = files(contains({files.name}, fileNameFilter));
+        % if isempty(filteredFiles)
+        %     error('No MAT-file matched the FileNameFilter in basePath.');
+        % elseif numel(filteredFiles) > 1
+        %     error('Multiple MAT-Files matched the FileNameFilter in basePath. Please refine the filter.');
+        % end
+        % matFilePath = fullfile(currentPath, filteredFiles(1).name);
     end
 
+    % load data
     if isempty(identifierArg)
         [fullCellData, fullTableOut.agingDataTable, ~] = import_OCV(matFilePath, nameTableColumnOCV, inputIsAging_data_table, 'CheckUp', i, varargin);
     else
