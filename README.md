@@ -15,17 +15,19 @@
     <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License">
   </a>
 
-  <!-- paper or preprint badge; update link once available -->
-  <a href="https://arxiv.org/abs/XXXX.XXXXX">
-    <img src="https://img.shields.io/badge/Paper-coming%20soon-informational.svg" alt="Paper">
+  <!-- paper badges -->
+  <a href="https://doi.org/10.1016/j.jpowsour.2026.239418">
+    <img src="https://img.shields.io/badge/Paper-J.%20Power%20Sources-green.svg" alt="Journal of Power Sources">
   </a>
 
-  <!-- DOI badge; fill in and uncomment once you have the DOI -->
-  <!--
-  <a href="https://doi.org/10.XXXX/zenodo.XXXXXXX">
-    <img src="https://zenodo.org/badge/DOI/10.XXXX/zenodo.XXXXXXX.svg" alt="DOI">
+  <a href="https://doi.org/10.1039/D5EB00221D">
+    <img src="https://img.shields.io/badge/Paper-EES%20Batteries-green.svg" alt="EES Batteries">
   </a>
-  -->
+
+  <!-- Zenodo DOI badge (concept DOI, resolves to latest version) -->
+  <a href="https://doi.org/10.5281/zenodo.17591931">
+    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.17591931.svg" alt="DOI">
+  </a>
 
   <br>
 
@@ -154,5 +156,18 @@ Germany
 
 
 <h2>✒️ Citation</h2>
-This framework is published alongside with a open-source publication of Mathias Rehm et al. in year 2026. In case you write any kind of publication, we kindly ask you to cite this publication. 
-Please know, that an earlier version of this framework was used and validated to precisely determine the degradation modes for commerical sodium batteries by Mathias Rehm et al. in another publication in 2026.
+
+This framework is published alongside an open-source paper where the full method and code are described.
+If you use this repository in any publication, please cite:
+
+> M. Rehm et al., "How to determine the degradation modes of lithium-ion batteries with silicon–graphite blend electrodes,"
+> *Journal of Power Sources*, 2026, DOI: [10.1016/j.jpowsour.2026.239418](https://doi.org/10.1016/j.jpowsour.2026.239418)
+
+The framework is also applied and validated on commercial sodium-ion batteries in the following publication.
+We appreciate citing this work as well, and kindly ask you to do so if your work involves sodium-ion cells:
+
+> M. Rehm et al., "Aging of commercial sodium-ion batteries with layered oxides: how to measure and analyze it?,"
+> *EES Batteries*, 2026, DOI: [10.1039/D5EB00221D](https://doi.org/10.1039/D5EB00221D)
+
+To cite a specific version of the code (e.g., for reproducibility), use the version-specific DOI from
+[Zenodo](https://doi.org/10.5281/zenodo.17591931).
