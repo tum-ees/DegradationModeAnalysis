@@ -125,6 +125,15 @@ if nCU == 0
     error('plotDMA: no CU-like fields (containing digits) found in Data.');
 end
 
+% sort CU fields by numeric suffix (CU1, CU2, ... CU10)
+cuNums = zeros(nCU,1);
+for k = 1:nCU
+    tok = regexp(cuFld{k}, '\d+', 'match', 'once');
+    cuNums(k) = str2double(tok);
+end
+[~, sortIdx] = sort(cuNums);
+cuFld = cuFld(sortIdx);
+
 % if user omitted EFC, fall back to 1:nCU
 if isempty(EFC),  EFC = 1:nCU; end
 if numel(EFC) ~= nCU

@@ -90,8 +90,22 @@ if useAnodeBlend
         min([max(Blend2U), max(Blend1U)]), ...
         settings.dataLength);
 
-    Q_anode_blend2_interp = interp1(Blend2U, Blend2SOC, commonVoltageAn, 'linear', 0);
-    Q_anode_blend1_interp = interp1(Blend1U, Blend1SOC, commonVoltageAn, 'linear', 0);
+    try
+        Q_anode_blend2_interp = interp1(Blend2U, Blend2SOC, commonVoltageAn, 'linear', 0);
+    catch
+        % Fallback: drop duplicate U values so interp1 gets unique x
+        [Blend2U_unique, idxBlend2] = unique(Blend2U, 'stable');
+        Q_anode_blend2_interp = interp1(Blend2U_unique, Blend2SOC(idxBlend2), ...
+            commonVoltageAn, 'linear', 0);
+    end
+    try
+        Q_anode_blend1_interp = interp1(Blend1U, Blend1SOC, commonVoltageAn, 'linear', 0);
+    catch
+        % Fallback: drop duplicate U values so interp1 gets unique x
+        [Blend1U_unique, idxBlend1] = unique(Blend1U, 'stable');
+        Q_anode_blend1_interp = interp1(Blend1U_unique, Blend1SOC(idxBlend1), ...
+            commonVoltageAn, 'linear', 0);
+    end
 
     % Normalized single curve representation from Blend1
     anode_SOC_single = linspace(0, 1, settings.dataLength);
