@@ -218,7 +218,10 @@ s.allowFirstCycleInhomogeneity = true;
 % set maximum allowed Inhomogeneity for both the anode and cathode
 s.maxInhomogeneity          = 0.3;           
 % maximum relative increase (Δ per CU), e.g. 0.1 for 10 % per CU
-s.maxInhomogeneityDelta     = 0.1;          
+s.maxInhomogeneityDelta     = 0.1;
+% fraction of max inhomogeneity already present at SOC=0 (0 = classic, 0.5 = 50%)
+s.inhomAnodeOffset          = 0;
+s.inhomCathodeOffset        = 0;
 
 % 15) Decide whether negative LAM per electrode or blend is allowed.
 % The user can allow some small negative anode/cathode loss (gain). 

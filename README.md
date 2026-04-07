@@ -70,7 +70,7 @@ This follows the algebraic reconstruction
 and is robust even when <span style="font-style:italic;">γ</span><sub>Si</sub>
  is only roughly estimated. Filtering of the generated curve is available if you want a strictly monotonic OCP. Use this only if you have a Si–Gr blend and want to avoid mismatches from literature silicon OCPs.
 
-<h4>degradation mode analysis</h4> Run the DMA by calling <code>[Data, s] = main_DMA(userSettingsOutside)</code>. Set all settings in <code>DMA_main</code>. For easier use you can overwrite any field from outside by passing a struct <code>s</code> into <code>main_DMA</code>; only provided fields change while defaults remain.
+<h4>degradation mode analysis</h4> Run the DMA by calling <code>[Data, s] = main_DMA(userSettingsOutside)</code>. Set all settings in <code>main_DMA</code>. For easier use you can overwrite any field from outside by passing a struct <code>s</code> into <code>main_DMA</code>; only provided fields change while defaults remain.
 
 
 
@@ -89,9 +89,9 @@ For non-deterministic algorithms (such as <code>ga</code>) use <code>s.rmseThres
 
 * Cathode blend option: enable with <code>s.useCathodeBlend</code> and set <code>s.gammaCaBlend2_init</code>, <code>s.gammaCaBlend2_upperBound</code>; supply a second cathode OCP.
 
-* Inhomogeneity of anode and cathode estimated separately: toggle <code>s.allowAnodeInhomogeneity</code>, <code>s.allowCathodeInhomogeneity</code>; limit with <code>s.maxInhomogeneity</code>, <code>s.maxInhomogeneityDelta</code>.
+* Inhomogeneity of anode and cathode estimated separately: toggle <code>s.allowAnodeInhomogeneity</code>, <code>s.allowCathodeInhomogeneity</code>; limit with <code>s.maxInhomogeneity</code>, <code>s.maxInhomogeneityDelta</code>. Use <code>s.inhomAnodeOffset</code> and <code>s.inhomCathodeOffset</code> to define the fraction of maximum inhomogeneity already present at SOC = 0 (<code>0</code> = classic behavior, <code>0.5</code> = 50% already present at SOC = 0).
 
-* Constraints and order: bound changes with <code>s.maxGain</code>, <code>s.maxLoss</code>. Control fitting order via the sort of <code>s.nCUs</code> (ascending or descending).
+* Constraints and order: bound changes with <code>s.maxCathodeGain</code>, <code>s.maxAnodeGain</code>, <code>s.maxAnBlend1Gain</code>, <code>s.maxAnBlend2Gain</code>, <code>s.maxCathodeLoss</code>, <code>s.maxAnodeLoss</code>, <code>s.maxAnBlend1Loss</code>, and <code>s.maxAnBlend2Loss</code>. Control fitting order via the sort of <code>s.nCUs</code> (ascending or descending).
 
 
 <h2>💾 Content</h2>
