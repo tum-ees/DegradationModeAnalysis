@@ -1,4 +1,4 @@
-function U_mean = calculate_inhomogeneity(SOC, U, inhom_max)
+function U_mean = calculate_inhomogeneity(SOC, U, inhom_max, inhom_offset_fraction)
 %> Author: Moritz Guenthner (moritz.guenthner@tum.de)
 %> supervised by Mathias Rehm (mathias.rehm@tum.de)
 %> Additional code by Mathias Rehm (mathias.rehm@tum.de)
@@ -7,7 +7,16 @@ function U_mean = calculate_inhomogeneity(SOC, U, inhom_max)
 % This function calculates the inhomogeneity effect on the OCV curve
 % based on a Gaussian distribution of local SOCs around the mean SOC.
 % Inhomogeneity is zero at 0 percent full cell SOC and maximum at 100 percent full
-% cell SOC.
+% cell SOC (default behavior, inhom_offset_fraction = 0).
+%
+% Optional 4th argument inhom_offset_fraction (default 0):
+%   If > 0, the inhomogeneity spread at SOC=0 is inhom_offset_fraction * max_spread
+%   instead of zero. E.g. 0.5 means 50% of max inhomogeneity already at SOC=0.
+%   At SOC=1 the spread is always 100% (unchanged).
+
+    if nargin < 4 || isempty(inhom_offset_fraction)
+        inhom_offset_fraction = 0;
+    end
 
     debugInhom = true;
 
@@ -42,12 +51,12 @@ function U_mean = calculate_inhomogeneity(SOC, U, inhom_max)
     U   = U(:);
 
     if ~debugInhom
-        U_mean = computeUmean(SOC, U, x, w);
+        U_mean = computeUmean(SOC, U, x, w, inhom_offset_fraction);
         return;
     end
 
     try
-        U_mean = computeUmean(SOC, U, x, w);
+        U_mean = computeUmean(SOC, U, x, w, inhom_offset_fraction);
     catch ME
         diagMsg = sprintf(['griddedInterpolant failed in calculate_inhomogeneity (debug mode).\n', ...
             'SOC size: %s | U size: %s\n', ...
@@ -74,19 +83,23 @@ end
 % -----------------------------------------------------------------------
 % Local helper: computeUmean
 % -----------------------------------------------------------------------
-function U_mean = computeUmean(SOC, U, x, w)
-    % Build query grid
-    Xq = SOC * x;
+function U_mean = computeUmean(SOC, U, x, w, inhom_offset_fraction)
+    % Build query grid.
+    % With inhom_offset_fraction = 0 (default): spread is proportional to SOC
+    %   (zero spread at SOC=0, full spread at SOC=1).
+    % With inhom_offset_fraction > 0: spread at SOC=0 is offset_fraction * max_spread,
+    %   growing linearly to full spread at SOC=1.
+    x_dev = x - 1;  % deviations from centre: linspace(-0.5, 0.5, 61)
+    alpha_eff = inhom_offset_fraction + (1 - inhom_offset_fraction) .* SOC;  % N×1
+    Xq = SOC + alpha_eff .* x_dev;  % N×61 via implicit broadcasting
 
-    % Faster interpolation using griddedInterpolant
-    F = griddedInterpolant(SOC, U, 'linear', 'linear');
+    % Faster interpolation using griddedInterpolant.
+    % 'nearest' extrapolation clamps out-of-range queries to the nearest
+    % boundary value (U at socMin for Xq<0, U at socMax for Xq>1), which is
+    % physically correct for electrode OCV curves and avoids the artifact
+    % from the old U(end) clamping when the offset produces negative Xq values.
+    F = griddedInterpolant(SOC, U, 'linear', 'nearest');
     E_OC_dist = F(Xq);
-
-    % Match old behavior: outside range gives U(end) (handle non-monotonic SOC order)
-    socMin = min(SOC);
-    socMax = max(SOC);
-    outMask = (Xq < socMin) | (Xq > socMax);
-    E_OC_dist(outMask) = U(end);
 
     % Weighted average across columns
     U_mean = E_OC_dist * w(:);
@@ -102,4 +115,3 @@ function val = safeStat(funHandle, vec)
         val = funHandle(vec(isfinite(vec)));
     end
 end
-

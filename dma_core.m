@@ -123,6 +123,17 @@ else
 end
 
 inhomDeltaPerCU = settings.maxInhomogeneityDelta;
+
+if isfield(settings, 'inhomAnodeOffset')
+    inhomAnodeOffset = settings.inhomAnodeOffset;
+else
+    inhomAnodeOffset = 0;
+end
+if isfield(settings, 'inhomCathodeOffset')
+    inhomCathodeOffset = settings.inhomCathodeOffset;
+else
+    inhomCathodeOffset = 0;
+end
 if isscalar(inhomDeltaPerCU)
     inhomDeltaPerCU = repmat(inhomDeltaPerCU, 1, 2);
 else
@@ -163,6 +174,8 @@ myData.anode_SOC_single        = half_and_full_cell_data.anode_SOC_single;
 myData.anode_U_single          = half_and_full_cell_data.anode_U_single;
 myData.useCathodeBlend         = useCathodeBlendModel;
 myData.useAnodeBlend           = useAnodeBlendModel;
+myData.inhomAnodeOffset        = inhomAnodeOffset;
+myData.inhomCathodeOffset      = inhomCathodeOffset;
 myData.Q0              = half_and_full_cell_data.Q0;
 
 % Precompute static masks and measured derivatives to avoid per-iteration recomputation
@@ -383,7 +396,7 @@ end
 
 % Apply anode inhomogeneity to the source curve if enabled
 if allowAnodeInhomogeneity
-    blendU = calculate_inhomogeneity(blendSOC, blendU, inhom_val_an);
+    blendU = calculate_inhomogeneity(blendSOC, blendU, inhom_val_an, inhomAnodeOffset);
 end
 
 % Compute cathode curve (blend optional) with inhomogeneities
@@ -395,7 +408,7 @@ else
 end
 if allowCathodeInhomogeneity
     cathU_src = calculate_inhomogeneity( ...
-        cathSOC_src, cathU_src, inhom_val_ca);
+        cathSOC_src, cathU_src, inhom_val_ca, inhomCathodeOffset);
 end
 
 % Shift/scale SOC for anode & cathode

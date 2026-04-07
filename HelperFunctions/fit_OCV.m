@@ -63,7 +63,7 @@ end
 
 % Apply anode inhomogeneity if needed
 if inhom_mag_an ~= 0
-    anodeU_src = calculate_inhomogeneity(anodeSOC_src, anodeU_src, inhom_mag_an);
+    anodeU_src = calculate_inhomogeneity(anodeSOC_src, anodeU_src, inhom_mag_an, myData.inhomAnodeOffset);
 end
 
 % Interpolate anode potential on Q grid
@@ -78,7 +78,7 @@ else
     cathU_src   = myData.cathode_U_single;
 end
 if inhom_mag_ca ~= 0
-    cathU_src = calculate_inhomogeneity(cathSOC_src, cathU_src, inhom_mag_ca);
+    cathU_src = calculate_inhomogeneity(cathSOC_src, cathU_src, inhom_mag_ca, myData.inhomCathodeOffset);
 end
 
 % 7) Construct cathode potential
