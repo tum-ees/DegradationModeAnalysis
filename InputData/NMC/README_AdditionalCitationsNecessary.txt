@@ -6,4 +6,4 @@ It is thus sufficient to cite the paper which was published alongside
 with this tool. Feel free to search for the paper of the aging study as well.
 
 Best regards,
-Mathias Rehm
+Mathias Rehm and co-authors

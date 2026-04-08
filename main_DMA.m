@@ -265,10 +265,10 @@ s.plotCathodeInDMA      = true;
 % fill in for charge direction
 if strcmp(s.direction, 'charge')
     % path to Anode -> needed in case of charge
-    s.blendAn1Data_path = "./InputData/Graphite/Gr_Lithiation_Kuecher.mat";
+    s.blendAn1Data_path = "./InputData/Graphite/Gr_Lithiation_Rehm2026.mat";
     % blendAn2 path; only needed when anode blend fitting is enabled
     s.blendAn2Data_path = "./InputData/Silicon/" + ...
-        "SiReconstr_Lithiation_Kuecher_P45B_Anode_0C03.mat";
+        "SiReconstr_Lithiation_Rehm2026_P45B_Anode_0C03.mat";
     % path to Cathode -> needed in case of charge    
     s.blendCa1Data_path = "./InputData/NCA/" + ...
         "GITT_P45b_Cat_NCA_JN_VS_Coin_1_GITT__Extracted_Continuous_pOCP.mat";
@@ -277,10 +277,10 @@ if strcmp(s.direction, 'charge')
 %    
 % fill in for discharge direction
 elseif strcmp(s.direction, 'discharge')
-    s.blendAn1Data_path = "./InputData/Graphite/Gr_Delithiation_Kuecher.mat";
+    s.blendAn1Data_path = "./InputData/Graphite/Gr_Delithiation_Rehm2026.mat";
     % blendAn2 path; only needed when anode blend fitting is enabled
     s.blendAn2Data_path = "./InputData/Silicon/" + ...
-        "SiReconstr_Kuecher_P45B_Anode_Delithiation_0C03.mat";
+        "SiReconstr_Rehm2026_P45B_Anode_Delithiation_0C03.mat";
     % path to Cathode -> needed in case of discharge
     s.blendCa1Data_path = "./InputData/NCA/P45B_Cathode_Delithiation_0C03.mat";
     % blendCa2 path; only needed when cathode blend fitting is enabled
