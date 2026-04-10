@@ -4,26 +4,43 @@ All notable changes to Degradation Mode Analysis are documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
-## [Unreleased] on yyyy-mm-dd
+## [2.0.0] - 2026-04-09
 
 ### Added
-* Placeholder
+* Inhomogeneity offset for anode and cathode (`s.inhomAnodeOffset`, `s.inhomCathodeOffset`): allows a fraction of maximum inhomogeneity to be present already at SOC = 0 instead of starting from zero (allows no SOC dependence as well, which would be analogous to previous degradation mode analysis frameworks in literature).
+* Isotonic regression for silicon OCP filtering in `generate_si_ocp` (replaces previous smoothing-based approach), producing strictly monotonic curves, while keeping maximum of information.
+* 0C02 rate OCPs added to the input data pool alongside existing 0C03/0C04/0C05 rate curves.
+* `import_ocv` now accepts `RPT`, `RPTs`, and `RPTNumber` columns for row lookup.
+* Case-insensitive column matching in `import_ocv` (e.g. `'rpt'` and `'RPT'` both work).
+* Case-insensitive name-value parsing in `import_ocv` (replaces `inputParser`).
+* `fileNameFilter` setting for selecting specific MAT files in CU-folder mode.
+* `.gitignore` rules for `.DS_Store` and generated result figures.
 
 ### Changed
-* Placeholder
+* **Breaking:** renamed main entry point from `main_DMA` to `main_dma`; output struct from `Data` to `data`.
+* **Breaking:** renamed `generate_si_OCP` to `generate_si_ocp`.
+* **Breaking:** all file and folder names now use `snake_case`; all variables, struct fields, and function parameters use `lowerCamelCase`.
+* **Breaking:** renamed `CheckUp` parameter to `checkUpIndex` in `import_ocv` and `get_full_cell_data`.
+* Renamed internal solver data bundle from `myData` to `solverInput` across `dma_core`, `fit_ocv`, `fit_dva`, `fit_ica`, and `calculate_blend_curve`.
+* Renamed `inputIsAging_data_table` to `inputIsAgingDataTable`.
+* Renamed internal silicon-graphite references from `SiC` to `SiGr` for clarity.
+* Consistent naming of graphite and silicon OCP input files.
+* Simplified RMSE detection in `plot_dma` to use `rmseFullRange` only.
+* Removed legacy `useBlendElectrodeModel` and `saveFig`/`savePathDMA` keys from `plot_dma`.
+* Rewrote `README.md` to reflect current naming and usage.
 
 ### Fixed
-* Placeholder
+* Fixed `varargin` passed as nested cell instead of expanded contents in `get_full_cell_data` CU-folder calls.
+* Fixed missing `nameTableColumnOCV` and `inputIsAgingDataTable` arguments in CU-folder mode calls to `import_ocv`.
+* Fixed non-monotonic regression in silicon OCP generation producing incorrect curves.
+* Fixed UTF-8 encoding corruption (mojibake) in comments of `plot_dma` and `main_dma`.
+* Removed dead `debugInhom` flag and unreachable code path in `calculate_inhomogeneity`.
+* Removed tracked `.DS_Store` files.
 
-## [1.0.0] on 2025-11-12
+## [1.0.0] - 2025-11-12
 
 ### Added
-* Initial public release of Degradation Mode Analysis
-* Core workflow for mode identification
-* Command line interface and basic documentation
+* Initial public release of Degradation Mode Analysis.
+* Core workflow for mode identification.
+* Command line interface and basic documentation.
 
-### Changed
-* None
-
-### Fixed
-* None
