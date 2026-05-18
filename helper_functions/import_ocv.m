@@ -60,7 +60,7 @@ agingDataTable = opts.agingDataTable;
 % Path can be parent of CUi folders, a CUi folder itself, a plain folder or a MAT file
 
 if isfolder(Path)
-    [parentDir, leaf] = fileparts(Path); %#ok<ASGLU>
+    [~, leaf] = fileparts(Path);
 
     % Does this directory contain CU* subfolders
     dirCU     = dir(fullfile(Path, 'CU*'));
@@ -130,7 +130,7 @@ elseif ~isempty(varNamesLoaded) && numel(varNamesLoaded) == 2 && all(ismember({'
     return;
 
 % Single variable in MAT, assume it is aging_data_table like content
-elseif ~isempty(varNamesLoaded) && numel(varNamesLoaded) == 1
+elseif ~isempty(varNamesLoaded) && isscalar(varNamesLoaded)
     data = loaded.(varNamesLoaded{1});
 
 else
@@ -160,12 +160,11 @@ end
 selected = select_row_from_table(data, identifier, checkUpIndex);
 if isempty(selected)
     dataOut      = {};
-    data         = data;
     varargout{1} = NaN;
     return;
 end
 
-[dataOut, vv] = extract_payload_from_row(selected, nameTableColumnOCV, Path);
+dataOut = extract_payload_from_row(selected, nameTableColumnOCV, Path);
 
 % If we did not get TestInfo yet, try to attach from a column
 if ~isfield(dataOut, 'TestInfo')
@@ -187,14 +186,6 @@ if ~isempty(matchedReturnCol)
 else
     varargout{1} = choose_third_output(selected, checkUpIndex, ~isempty(returnColName));
 end
-
-% If extract_payload_from_row ever returns its own preferred tag, allow override
-if ~isempty(vv) && ~isempty(returnColName)
-    varargout{1} = vv;
-end
-
-% Second output is the full aging table
-data = data;
 
 end
 
@@ -334,7 +325,7 @@ end
 [~, idxSort] = sort({files.name});
 files = files(idxSort);
 
-if numel(files) == 1 && isempty(fileNameFilter)
+if isscalar(files) && isempty(fileNameFilter)
     fpath = fullfile(folder, files(1).name);
     return;
 end
@@ -500,7 +491,7 @@ else
 end
 end
 
-function [outStruct, retOverride] = extract_payload_from_row(selected, nameTableColumnOCV, Path)
+function outStruct = extract_payload_from_row(selected, nameTableColumnOCV, Path)
 % Extract OCV payload from a single selected row
 %
 % Order
@@ -508,8 +499,6 @@ function [outStruct, retOverride] = extract_payload_from_row(selected, nameTable
 %   2) first table or timetable column in row
 %   3) first struct with TestData as table or timetable
 %   4) interpret row as flat SOC or U or MaxAhStep container
-
-retOverride = [];
 
 rowData   = table2cell(selected(1,:));
 varNamesS = selected.Properties.VariableNames;
@@ -790,12 +779,7 @@ for idxKey = 1:numel(fieldsValid)
             'Variable "%s" is treated as "%s".', usedName, key);
     end
 
-    if isTab
-        value = data.(usedName);
-    else
-        value = data.(usedName);
-    end
-
+    value = data.(usedName);
     outStruct.(key) = value;
 
     if strcmp(key,'MaxAhStep')
@@ -861,4 +845,3 @@ if ~isempty(du) && ~isempty(ds)
     end
 end
 end
-

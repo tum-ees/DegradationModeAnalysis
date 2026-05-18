@@ -4,6 +4,21 @@ All notable changes to Degradation Mode Analysis are documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [2.0.1] - 2026-05-18
+
+### Added
+* Independent LOWESS filtering in `generate_si_ocp` via new `'filterBlend'` and `'filterGraphite'` parameters.
+
+### Changed
+* `'filterInputData'` parameter in `generate_si_ocp` is deprecated; use `'filterBlend'` / `'filterGraphite'` instead.
+
+### Internal
+* Renamed test input data files: `MRe_M36_*` → `LGM36_*`; `SiReconstr_Rehm2026_P45B_Anode_Delithiation_*` → `SiReconstr_Delithiation_Rehm2026_P45B_Anode_*`.
+* Flattened results directory: default `pathSaveResults` is `results/` (lowercase); DMA figures saved at the root; per-CU parameter figures under `results/parameter/`.
+* Removed unused `s.plotBlend2Overall` setting and `helper_functions/plot_gamma.m`.
+* Removed stale files: `helper_functions/norm_blend_voltage.m`, `helper_functions/plot_ocv_model_reconstruction.m`, `helper_functions/tum_colors.mat`, and shadowed `generate_si_ocp/1_generate_si_ocp_helper/load_blend.m`.
+* Minor cleanups in `generate_si_ocp` (`path`/`pathSel` rename, `builtin('path')` use) and `import_ocv` (dead code removal, scalar checks).
+
 ## [2.0.0] - 2026-04-09
 
 ### Added

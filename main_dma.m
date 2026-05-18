@@ -43,7 +43,7 @@ function [data, s] = main_dma(userSettingsOutside)
 %> DEPENDENCIES:
 %>   - `dma_core`, `calculate_rmse`, `calculate_degradation_modes`,
 %>     `plot_ocv_model_param_show`,
-%>     `plot_dma`, `plot_gamma`.
+%>     `plot_dma`.
 %>   - Make sure you have all relevant half-cell data files accessible.
 %>   - Ensure correct path additions for your local environment.
 %>
@@ -53,7 +53,7 @@ function [data, s] = main_dma(userSettingsOutside)
 %% -------------- SETUP ALL USER SETTINGS IN STRUCT s --------------
 % Settings are overwritten if varargin contains a settings struct (see below)
 s = struct();
-frameworkVersion = '2.0.0';
+frameworkVersion = '2.0.1';
 s.frameworkVersion = frameworkVersion;
 
 % 1) Define path to your Aging Study (in case you use .mat table to store
@@ -63,7 +63,7 @@ s.pathAgingStudy = ".\input_data" + ...
     "\test_data\P45B_serial23_aging_data_table.mat";
 
 s.pathSaveResults = ".\input_data" + ...
-    "\test_data\Results";
+    "\test_data\results";
 
 % 2) Select calendarOrCyclic
 % s.calendarOrCyclic selects the label semantics used in figures/titles only:
@@ -244,8 +244,6 @@ s.maxAnBlend2Loss  = 1; % e.g. 0.6 -> limit anode Blend2 loss to 60% per CU
 s.cellName              = 'P45B';   % cell name for plot titles
 s.plotParamCU           = true;    % Plot parameter overview for each CU
 s.plotDMAOverall         = true;    % Plot overall DMA results
-% special figure for blend electrodes
-s.plotBlend2Overall     = false;    % Plot overall Blend2 content
 s.plotAllAcceptedCU     = false;   % Plot all accepted solutions (not just best)
 % Labels for plots (only relevant for final plotting scripts; can be overwritten)
 s.labelCathode          = 'Cathode';
@@ -275,18 +273,18 @@ if strcmp(s.direction, 'charge')
     s.blendCa1DataPath = "./input_data/NCA/" + ...
         "GITT_P45b_Cat_NCA_JN_VS_Coin_1_GITT__Extracted_Continuous_pOCP.mat";
     % blendCa2 path; only needed when cathode blend fitting is enabled
-    s.blendCa2DataPath = ".\input_data\NMC\MRe_M36_PE_coin_Cathode_Delithiation_0C02.mat";
+    s.blendCa2DataPath = ".\input_data\NMC\LGM36_PE_coin_Cathode_Delithiation_0C02.mat";
 %    
 % fill in for discharge direction
 elseif strcmp(s.direction, 'discharge')
     s.blendAn1DataPath = "./input_data/graphite/Gr_Delithiation_Rehm2026.mat";
     % blendAn2 path; only needed when anode blend fitting is enabled
     s.blendAn2DataPath = "./input_data/silicon/" + ...
-        "SiReconstr_Rehm2026_P45B_Anode_Delithiation_0C03.mat";
+        "SiReconstr_Delithiation_Rehm2026_P45B_Anode_0C03.mat";
     % path to Cathode -> needed in case of discharge
     s.blendCa1DataPath = "./input_data/NCA/P45B_Cathode_Delithiation_0C03.mat";
     % blendCa2 path; only needed when cathode blend fitting is enabled
-    s.blendCa2DataPath = ".\input_data\NMC\MRe_M36_PE_coin_Cathode_Delithiation_0C02.mat";
+    s.blendCa2DataPath = ".\input_data\NMC\LGM36_PE_coin_Cathode_Delithiation_0C02.mat";
 else
     error('Invalid direction. Must be ''charge'' or ''discharge''.');
 end
@@ -320,7 +318,7 @@ end
 % Add path of all helper_functions
 addpath(['.' filesep 'helper_functions']);
 % Add PlottingFunctions and create save paths via path handling function
-[savePathModel, savePathDMA, savePathBlend2Content] = handle_paths(s);
+[savePathModel, savePathDMA] = handle_paths(s);
 
 %% --- Extract Cell Identifier Key & Value from input -----------------
 [cellIdentifierKeys, cellIdentifierValues] = ...
@@ -689,17 +687,6 @@ if s.plotDMAOverall && ~isempty(fieldnames(data))
 
     label = sprintf('%s_DMA', s.cellName);
     save_figure(savePathDMA, label);
-end
-
-% -------------- OVERALL gamma PLOT --------------
-if s.plotBlend2Overall && ~isempty(fieldnames(data)) && s.useAnodeBlend
-    plot_gamma(data, CUsUsed, s.calendarOrCyclic);
-    if ~exist(savePathBlend2Content, 'dir')
-        mkdir(savePathBlend2Content);  % Create the directory if necessary
-    end
-
-    label = sprintf('%s_SiContent', s.cellName);
-    save_figure(savePathBlend2Content, label);
 end
 
 % ------ Saving parameters and fitting data ------

@@ -26,8 +26,9 @@
   </a>
 
   <br>
+  <br>
 
-  <img src="doc/OCP_shift_over_SOC.gif" width="400">
+  <img src="doc/OCP_shift_over_SOC.gif" width="550">
 </div>
 
 <h2>Overview</h2>
@@ -97,8 +98,6 @@ Detailed documentation of the modules can be found below.
 * Folder `generate_si_ocp`: all necessary scripts to generate the silicon OCP
 
 * `generate_si_ocp.m`: entry script to perform the calculation in GUI or script mode
-
-* Subfolder `1_generate_si_ocp_helper`: helper functions used by `generate_si_ocp.m`
 
 </details>
 
