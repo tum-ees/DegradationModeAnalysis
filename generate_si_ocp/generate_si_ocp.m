@@ -29,8 +29,13 @@
 %     'graphiteSource'   Rehm2026 | Rehm2025 | Hossain | Wetjen | Schmitt
 %     'lithDirection'    lithiation | delithiation
 %     'gammaSi'          silicon fraction gamma  (0 < gamma < 1)
-%     'filterInputData'  true | false           (default false)
-%                        LOWESS smoothing + deduplication on input curves.
+%     'filterBlend'      true | false           (default false)
+%                        LOWESS smoothing + deduplication on the measured
+%                        blend curve.
+%     'filterGraphite'   true | false           (default false)
+%                        LOWESS smoothing + deduplication on the graphite
+%                        reference.
+%     'filterInputData'  deprecated alias. If set, applied to both curves.
 %     'pavOutput'        true | false          (default true)
 %                        Apply Pool Adjacent Violators (PAV) isotonic
 %                        regression to the output silicon curve to enforce
@@ -54,7 +59,8 @@ graphitePath      = "";
 graphiteSource    = "Rehm2026";
 lithDirection     = "lithiation";
 gammaSi           = NaN;
-filterInputData    = false;
+filterBlend       = false;
+filterGraphite    = false;
 pavOutput         = true;
 plotFlag          = true;
 
@@ -88,8 +94,19 @@ for k = 1:2:numel(varargin)
         case 'gammasi'
             gammaSi = double(val);
 
+        case 'filterblend'
+            filterBlend = parseLogicalFlag(val, keyStr);
+
+        case 'filtergraphite'
+            filterGraphite = parseLogicalFlag(val, keyStr);
+
         case 'filterinputdata'
+            warning('generate_si_ocp:DeprecatedOption', ...
+                ['''filterInputData'' is deprecated; use ''filterBlend'' ', ...
+                 'and ''filterGraphite'' instead.']);
             filterInputData = parseLogicalFlag(val, keyStr);
+            filterBlend    = filterInputData;
+            filterGraphite = filterInputData;
 
         case 'pavoutput'
             pavOutput = parseLogicalFlag(val, keyStr);
@@ -108,7 +125,8 @@ thisDir  = fileparts(mfilename('fullpath'));
 projRoot = fileparts(thisDir);
 graphDir = fullfile(projRoot,'input_data','graphite');
 
-if ~contains(builtin('path'), projRoot)
+% Add project tree to the MATLAB path if needed.
+if ~contains(path, projRoot)
     addpath(genpath(projRoot));
 end
 
@@ -178,12 +196,15 @@ if strlength(blendPath)==0 || isnan(gammaSi) || strlength(savePath)==0
 
     % -- Filter & monotonic output checkboxes -----------------------------
     y0 = y0 - dy;
-    hChkFilter = uicontrol(d,'Style','checkbox','Units','normalized', ...
-        'Position',[0.02 y0 0.50 0.08], ...
-        'String','Filter input data (LOWESS)', 'Value',filterInputData);
+    hChkBlend = uicontrol(d,'Style','checkbox','Units','normalized', ...
+        'Position',[0.02 y0 0.32 0.08], ...
+        'String','Filter blend (LOWESS)', 'Value',filterBlend);
+    hChkGraphite = uicontrol(d,'Style','checkbox','Units','normalized', ...
+        'Position',[0.34 y0 0.32 0.08], ...
+        'String','Filter graphite (LOWESS)', 'Value',filterGraphite);
     hChkPAV = uicontrol(d,'Style','checkbox','Units','normalized', ...
-        'Position',[0.52 y0 0.45 0.08], ...
-        'String','Monotone filter output (PAV)', 'Value',pavOutput);
+        'Position',[0.66 y0 0.32 0.08], ...
+        'String','Monotone output (PAV)', 'Value',pavOutput);
 
     % -- Info line --------------------------------------------------------
     y0 = y0 - dy;
@@ -212,8 +233,9 @@ if strlength(blendPath)==0 || isnan(gammaSi) || strlength(savePath)==0
     graphiteSource  = string(refList{get(hRef,'Value')});
 
     gammaSi         = str2double(get(hGamma,'String'));
-    filterInputData = logical(get(hChkFilter,'Value'));
-    pavOutput       = logical(get(hChkPAV,'Value'));
+    filterBlend     = logical(get(hChkBlend   ,'Value'));
+    filterGraphite  = logical(get(hChkGraphite,'Value'));
+    pavOutput       = logical(get(hChkPAV     ,'Value'));
 
     delete(d)
 end
@@ -238,8 +260,8 @@ end
 graphiteData = load_ocv(graphitePath);
 blendData = load_blend(blendPath);
 
-graphiteData = smoothUnique(graphiteData, filterInputData);
-blendData = smoothUnique(blendData, filterInputData);
+graphiteData = smoothUnique(graphiteData, filterGraphite);
+blendData = smoothUnique(blendData, filterBlend);
 
 %% 07 ALIGN TO COMMON VOLTAGE WINDOW
 voltageMin = max([min(graphiteData.voltage), min(blendData.voltage)]);
@@ -280,9 +302,11 @@ siliconStruct.normalizedCapacity = qSilicon;
 
 %% 09 SAVE RESULT
 if strlength(savePath)==0
-    [file,path] = uiputfile({'*.mat','MAT-files (*.mat)'}, ...
+    % NOTE: do not name this local variable `path` -- it shadows the
+    % MATLAB built-in `path()` used at line ~131 for the contains-check.
+    [file,pathSel] = uiputfile({'*.mat','MAT-files (*.mat)'}, ...
                             'Save extracted Si curve as','SiCurve.mat');
-    if isequal(file,0); savePath=""; else; savePath=fullfile(path,file); end
+    if isequal(file,0); savePath=""; else; savePath=fullfile(pathSel,file); end
 end
 if strlength(savePath)>0
     if ~endsWith(savePath,'.mat','IgnoreCase',true)
@@ -439,23 +463,20 @@ function out = trimAndRenorm(inStruct, Vmin, Vmax)
     out = inStruct;
 end
 
-%% H5 smoothLocalDescent ---------------------------------------------------
-% -> functionality removed
-
-%% H6 capitalize -----------------------------------------------------------
+%% H5 capitalize -----------------------------------------------------------
 function str = capitalize(s)
 % Capitalize first letter; rest lower-case.
     s = char(s);
     str = [upper(s(1)) lower(s(2:end))];
 end
 
-%% H7 iif ------------------------------------------------------------------
+%% H6 iif ------------------------------------------------------------------
 function y = iif(cond,a,b)
 % Inline if: returns a if cond else b.
     if cond, y=a; else, y=b; end
 end
 
-%% H8 set_full_path ----------------------------------------------------------
+%% H7 set_full_path ----------------------------------------------------------
 function set_full_path(hEdit,dlgFcn,filterSpec,dlgTitle)
 % Helper for Browse buttons -> write full path into edit field.
     [file,path] = dlgFcn(filterSpec,dlgTitle);

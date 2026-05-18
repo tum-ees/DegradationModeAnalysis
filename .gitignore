@@ -2,7 +2,8 @@
 *.log
 .claude/
 .DS_Store
-**/Results/**/*.fig
-**/Results/**/*.png
-**/Results/**/*.pdf
-**/Results/**/*.mat
+**/results/**/*.fig
+**/results/**/*.png
+**/results/**/*.pdf
+**/results/**/*.mat
+!input_data/test_data/results/**
