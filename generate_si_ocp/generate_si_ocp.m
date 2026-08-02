@@ -40,6 +40,18 @@
 %                        Apply Pool Adjacent Violators (PAV) isotonic
 %                        regression to the output silicon curve to enforce
 %                        monotonicity.
+%     'interpolationReadyOutput' true | false  (default false)
+%                        Collapse the PAV plateaus (keep both endpoints,
+%                        drop the interior) and resample the result onto a
+%                        uniform, strictly increasing capacity grid using
+%                        PCHIP. The table then has unique, strictly
+%                        monotone capacity coordinates, preserves the
+%                        overall voltage support and represents plateau
+%                        regions as steep continuous ramps about one grid
+%                        cell wide. Meant for consumers that read the
+%                        table directly as a look-up table over capacity,
+%                        such as PyBaMM. It does not smooth the DVA of a
+%                        q(U) consumer.
 %     'plotFlag'         true | false          (default true)
 %
 %  Returns
@@ -62,6 +74,7 @@ gammaSi           = NaN;
 filterBlend       = false;
 filterGraphite    = false;
 pavOutput         = true;
+interpolationReadyOutput = false;
 plotFlag          = true;
 
 % ---- Parse varargin -----------------------------------------------------
@@ -111,12 +124,19 @@ for k = 1:2:numel(varargin)
         case 'pavoutput'
             pavOutput = parseLogicalFlag(val, keyStr);
 
+        case 'interpolationreadyoutput'
+            interpolationReadyOutput = parseLogicalFlag(val, keyStr);
+
         case 'plotflag'
             plotFlag = parseLogicalFlag(val, keyStr);
 
         otherwise
             warning('Unknown parameter "%s" ignored.', keyStr);
     end
+end
+
+if interpolationReadyOutput && ~pavOutput
+    error('interpolationReadyOutput requires pavOutput=true.');
 end
 
 
@@ -273,15 +293,11 @@ blendData = trimAndRenorm(blendData, voltageMin, voltageMax);
 numPoints = max(numel(graphiteData.voltage), numel(blendData.voltage));
 voltageCommon = linspace(voltageMin, voltageMax, numPoints).';
 
-qGraphite = interp1(graphiteData.voltage, graphiteData.normalizedCapacity, voltageCommon, 'linear', 0);
-qBlend = interp1(blendData.voltage, blendData.normalizedCapacity, voltageCommon, 'linear', 0);
+qGraphite = interp1(graphiteData.voltage, graphiteData.normalizedCapacity, voltageCommon, 'linear');
+qBlend = interp1(blendData.voltage, blendData.normalizedCapacity, voltageCommon, 'linear');
 
-maskFirst = false(size(voltageCommon));  maskFirst(1) = true;
-maskFlat  = (qGraphite == min(qGraphite)) & (qGraphite == max(qGraphite));
-maskKeep  = ~(maskFirst | maskFlat);
-voltageCommon = voltageCommon(maskKeep);
-qGraphite = qGraphite(maskKeep);
-qBlend = qBlend(maskKeep);
+assert(all(isfinite(qGraphite)) && all(isfinite(qBlend)), ...
+    'Common voltage grid is outside the aligned input support.');
 
 %% 08 CALCULATE SILICON CURVE
 qSilicon = (qBlend - (1 - gammaSi) .* qGraphite) ./ gammaSi;
@@ -297,8 +313,15 @@ if pavOutput
     end
 end
 
-siliconStruct.voltage            = voltageCommon;
-siliconStruct.normalizedCapacity = qSilicon;
+outputVoltage = voltageCommon;
+outputCapacity = qSilicon;
+if interpolationReadyOutput
+    [outputCapacity, outputVoltage] = makeInterpolationReady( ...
+        voltageCommon, qSilicon);
+end
+
+siliconStruct.voltage            = outputVoltage;
+siliconStruct.normalizedCapacity = outputCapacity;
 
 %% 09 SAVE RESULT
 if strlength(savePath)==0
@@ -323,7 +346,7 @@ if plotFlag
     figure('Name','Graphite / Silicon / Blend'); hold on; grid on; box on;
     plot(qGraphite, voltageCommon, '-','Color',tumBlue  ,'LineWidth',1.6, ...
         'DisplayName',['Graphite (' char(graphiteSource) ')']);
-    plot(qSilicon, voltageCommon, '-','Color',tumOrange,'LineWidth',1.6, ...
+    plot(outputCapacity, outputVoltage, '-','Color',tumOrange,'LineWidth',1.6, ...
         'DisplayName','Silicon');
     plot(qBlend, voltageCommon, '--','Color',[0 0 0],'LineWidth',1.6, ...
         'DisplayName','SiGr-Blend');
@@ -422,7 +445,259 @@ function qMono = pavIsotonic(qRaw, direction)
     end
 end
 
-%% H3c parseLogicalFlag -----------------------------------------------------
+%% H3c makeInterpolationReady -----------------------------------------------
+function [qGrid, voltageGrid] = makeInterpolationReady(voltage, capacity)
+% Resample U(q) onto a uniform, strictly increasing capacity grid.
+%
+% PAV pools monotonicity violators onto their common mean, so the isotonic
+% output carries runs of exactly equal capacity (plateaus). A plateau is a
+% vertical segment of U(q): several samples share one capacity coordinate
+% while their voltages differ. Discarding plateaus with unique(...,'stable')
+% keeps only the first sample of every run and therefore throws the
+% plateau's voltage extent away.
+%
+% collapsePlateaus keeps BOTH plateau endpoints and separates them by a
+% tiny shift instead, so the capacity coordinates become unique and
+% strictly monotone while the overall voltage support of the curve is
+% preserved exactly. It serves the same purpose as the strict_sto export in
+% PyDMA. In the resampled table a plateau region shows up as a steep but
+% continuous ramp roughly one output grid cell wide, and two plateaus that
+% fall into the same grid cell merge into a single ramp. The mode is meant
+% for consumers that read the table directly as a look-up table over
+% capacity, such as PyBaMM, where it avoids the voltage jump that several
+% samples stacked on one capacity coordinate produce. It does not smooth
+% the curve: a consumer that differentiates q(U) still sees the plateau
+% edges of the PAV result.
+    voltage  = voltage(:);
+    capacity = capacity(:);
+
+    if max(capacity) <= min(capacity)
+        error(['Interpolation-ready output requires a non-degenerate ', ...
+               'capacity range, but the PAV curve is constant.']);
+    end
+
+    % Collapse on the native (voltage-ordered) samples. collapsePlateaus
+    % detects the monotonicity direction itself and needs the plateau
+    % endpoints in their original order; sorting by capacity beforehand
+    % would reverse the voltage order inside each plateau and fold U(q).
+    [voltageCollapsed, capacityCollapsed] = collapsePlateaus(voltage, capacity);
+
+    % The collapse only drops plateau interiors, so the first and the last
+    % sample of the input must survive it unchanged.
+    assert(voltageCollapsed(1) == voltage(1) && ...
+           voltageCollapsed(end) == voltage(end), ...
+        'Collapsing the plateaus changed the voltage support of the curve.');
+
+    [qSorted, order] = sort(capacityCollapsed, 'ascend');
+    voltageSorted = voltageCollapsed(order);
+
+    if numel(qSorted) < 2
+        error('Interpolation-ready output requires at least two capacity values.');
+    end
+
+    % No deduplication here. A residual tie means collapsePlateaus failed to
+    % separate two samples, and silently dropping one of them would discard
+    % its voltage together with a part of the voltage support, which is
+    % exactly the failure mode this output mode has to avoid.
+    tieIdx = find(diff(qSorted) <= 0, 1, 'first');
+    if ~isempty(tieIdx)
+        error(['Collapsed capacity is not strictly increasing: the sorted ', ...
+               'samples %d and %d both sit at q = %.17g (voltages %.17g ', ...
+               'and %.17g).'], tieIdx, tieIdx+1, qSorted(tieIdx), ...
+               voltageSorted(tieIdx), voltageSorted(tieIdx+1));
+    end
+
+    qGrid = linspace(qSorted(1), qSorted(end), 1001).';
+    voltageGrid = interp1(qSorted, voltageSorted, qGrid, 'pchip');
+
+    assert(all(isfinite(voltageGrid)), 'PCHIP output contains non-finite values.');
+    assert(all(diff(qGrid) > 0), 'Output capacity grid is not strictly increasing.');
+    assert(min(diff(qGrid)) >= 1e-5, ...
+        'Output capacity spacing is below the required minimum of 1e-5.');
+    assert(all(diff(voltageGrid) > 0) || all(diff(voltageGrid) < 0), ...
+        'PCHIP voltage output is not strictly monotone.');
+end
+
+%% H3c2 collapsePlateaus ----------------------------------------------------
+function [voltageOut, capacityOut] = collapsePlateaus(voltage, capacity, epsShift)
+% Replace plateaus in CAPACITY (runs of equal values) by their two voltage
+% endpoints, separated by a tiny shift so the result is strictly monotone.
+% (The shift argument is named epsShift rather than eps so it does not
+%  shadow the MATLAB builtin eps inside this function.)
+%
+% For every run of length L >= 2 at level q:
+%   - keep only the first and last index of the run (drop the interior),
+%   - move the two kept samples to q-s and q+s (reversed for a
+%     non-increasing curve).
+% Samples that are not part of a plateau keep their exact capacity, so
+% linear interpolation across the original plateau range is preserved to
+% within s and voltage -> capacity consumers see the same curve.
+%
+% The shift s is bounded twice, and both bounds are what keeps the output
+% strictly monotone:
+%   - s <= epsShift, the global tie-breaking scale, and
+%   - s <= a quarter of the distance to the neighbouring plateau levels, so
+%     the shifted endpoints of two adjacent runs can never meet, however
+%     close the two levels are.
+% Levels that are closer than a few ulps are pooled into one run before the
+% shift is computed, because at that distance a quarter of the gap is no
+% longer representable (see below).
+% A run that sits exactly on the boundary of the capacity range is shifted
+% INWARD only: the boundary sample keeps its exact value and its partner
+% moves into the range. The output therefore stays inside the input range
+% by construction and never has to be clamped back. Clamping was the origin
+% of a silent data loss: it pushed shifted samples back onto the boundary
+% value, re-created exact ties there and let the caller drop the tied
+% samples together with their voltage support.
+%
+%   voltage  : voltage samples, ordered together with capacity
+%   capacity : monotone (post-PAV) capacity, possibly containing plateaus
+%   epsShift : optional tie-breaking shift; default 1e-5 of the capacity
+%              range (tiny, yet robust under downstream cubic interpolation)
+    voltage  = voltage(:);
+    capacity = capacity(:);
+    n = numel(capacity);
+    if n < 2
+        voltageOut = voltage;
+        capacityOut = capacity;
+        return
+    end
+
+    if capacity(end) >= capacity(1)
+        direction = 1;
+    else
+        direction = -1;
+    end
+
+    qRange = max(capacity) - min(capacity);
+    if nargin < 3 || isempty(epsShift)
+        if qRange > 0
+            epsShift = qRange * 1e-5;
+        else
+            epsShift = 1e-9;
+        end
+    end
+    epsShift = max(double(epsShift), eps('double'));
+
+    % PAV-pooled means can drift in floating point so adjacent buckets that
+    % should have merged end up slightly violating monotonicity. The
+    % cumulative min/max snap forces (non-)monotonicity exactly, so the
+    % plateau detection below works on a clean signal. Flipping the sign for
+    % a falling curve lets both directions share one code path: qWork is
+    % non-decreasing, and the mirrored result is flipped back at the end.
+    if direction > 0
+        qWork = cummax(capacity);
+    else
+        qWork = -cummin(capacity);
+    end
+    qWorkMin = qWork(1);
+    qWorkMax = qWork(end);
+
+    % Runs of equal capacity. Their levels are strictly increasing.
+    runStart = [1; find(diff(qWork) > 0) + 1];
+    runEnd   = [runStart(2:end) - 1; n];
+    levels   = qWork(runStart);
+
+    % Pool levels that are numerically indistinguishable. The shift applied
+    % below is a quarter of the distance to the neighbouring level, so with
+    % a gap under 4 ulps of the level magnitude the shifted endpoint rounds
+    % straight back onto its own level and the pair ties again. Requiring
+    % 8 ulps keeps every shifted endpoint at least 2 ulps away from its
+    % level under round-to-nearest, on both sides of the run. Levels that
+    % close are the same level at machine precision, so their runs are
+    % merged and the merged run keeps the first and the last sample of the
+    % whole group. This is the same kind of floating point pooling as the
+    % cumulative min/max snap above.
+    keepRun = true(numel(levels), 1);
+    reference = levels(1);
+    for r = 2:numel(levels)
+        if levels(r) - reference <= 8*max(eps(levels(r)), eps(reference))
+            keepRun(r) = false;
+        else
+            reference = levels(r);
+        end
+    end
+    if ~all(keepRun)
+        kept = find(keepRun);
+        mergedEnd = zeros(numel(kept), 1);
+        mergedEnd(1:end-1) = runEnd(kept(2:end) - 1);
+        mergedEnd(end) = runEnd(end);
+        mergedLevels = levels(kept);
+        % The first group starts at the lower end of the range anyway. The
+        % last group is represented by the upper end instead of by its own
+        % first level, so both boundary values stay exact and the
+        % inward-only shift below still recognises them.
+        mergedLevels(end) = levels(end);
+        runStart = runStart(kept);
+        runEnd   = mergedEnd;
+        levels   = mergedLevels;
+    end
+    numRuns  = numel(levels);
+
+    % Shift budget per run: the global scale, capped at a quarter of the
+    % distance to either neighbouring level.
+    shift = repmat(epsShift, numRuns, 1);
+    if numRuns > 1
+        gaps = diff(levels);
+        shift(1:end-1) = min(shift(1:end-1), 0.25*gaps);
+        shift(2:end)   = min(shift(2:end)  , 0.25*gaps);
+    end
+
+    % Keep the first and the last sample of every run and separate them.
+    voltageOut  = zeros(2*numRuns, 1);
+    capacityOut = zeros(2*numRuns, 1);
+    p = 0;
+    for r = 1:numRuns
+        q = levels(r);
+        s = shift(r);
+
+        p = p + 1;
+        voltageOut(p) = voltage(runStart(r));
+        if runEnd(r) == runStart(r)
+            capacityOut(p) = q;      % isolated sample: keep it untouched
+            continue
+        end
+
+        if q == qWorkMin
+            capacityOut(p) = q;      % boundary run: shift inward only
+        else
+            capacityOut(p) = q - s;
+        end
+
+        p = p + 1;
+        voltageOut(p) = voltage(runEnd(r));
+        if q == qWorkMax
+            capacityOut(p) = q;      % boundary run: shift inward only
+        else
+            capacityOut(p) = q + s;
+        end
+    end
+    voltageOut  = voltageOut(1:p);
+    capacityOut = capacityOut(1:p);
+
+    % Safety net. After the pooling above every shift is representable and
+    % neighbouring output values differ by at least two ulps, so this sweep
+    % is not expected to change anything. It steps by a single ulp and the
+    % result is not clamped back into the range: a clamp would re-create
+    % exactly the ties that this function exists to prevent.
+    for k = 2:p
+        if capacityOut(k) <= capacityOut(k-1)
+            capacityOut(k) = capacityOut(k-1) + eps(capacityOut(k-1));
+        end
+    end
+
+    % Contract of this function, guaranteed by construction rather than
+    % repaired: strictly monotone capacity that stays inside the range of
+    % the snapped input curve.
+    assert(all(diff(capacityOut) > 0), ...
+        'Collapsed capacity is not strictly monotone.');
+    assert(capacityOut(1) >= qWorkMin && capacityOut(end) <= qWorkMax, ...
+        'Collapsed capacity left the range of the input curve.');
+
+    capacityOut = direction * capacityOut;
+end
+
+%% H3d parseLogicalFlag -----------------------------------------------------
 function tf = parseLogicalFlag(val, paramName)
 % Parse logical option from logical, numeric, string, or char scalar input.
     if islogical(val) && isscalar(val)
@@ -455,12 +730,25 @@ end
 
 %% H4 trimAndRenorm ---------------------------------------------------------
 function out = trimAndRenorm(inStruct, Vmin, Vmax)
-% Trim to [Vmin,Vmax] and rescale capacity to [0...1].
-    mask = inStruct.voltage>=Vmin & inStruct.voltage<=Vmax;
-    inStruct.voltage            = inStruct.voltage(mask);
-    inStruct.normalizedCapacity = inStruct.normalizedCapacity(mask);
-    inStruct.normalizedCapacity = rescale(inStruct.normalizedCapacity,0,1);
-    out = inStruct;
+% Interpolate exact overlap boundaries, retain interior samples, and
+% rescale capacity to [0...1]. This keeps the subsequent common grid fully
+% inside the aligned support instead of filling dropped edge samples with 0.
+    voltage = inStruct.voltage(:);
+    capacity = inStruct.normalizedCapacity(:);
+    [voltage, order] = sort(voltage, 'ascend');
+    capacity = capacity(order);
+    [voltage, uniqueIdx] = unique(voltage, 'stable');
+    capacity = capacity(uniqueIdx);
+
+    boundaryCapacity = interp1(voltage, capacity, [Vmin; Vmax], 'linear');
+    assert(all(isfinite(boundaryCapacity)), ...
+        'Overlap boundaries are outside the input support.');
+
+    interior = voltage > Vmin & voltage < Vmax;
+    out.voltage = [Vmin; voltage(interior); Vmax];
+    out.normalizedCapacity = [boundaryCapacity(1); ...
+        capacity(interior); boundaryCapacity(2)];
+    out.normalizedCapacity = rescale(out.normalizedCapacity,0,1);
 end
 
 %% H5 capitalize -----------------------------------------------------------
