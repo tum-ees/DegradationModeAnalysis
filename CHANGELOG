@@ -4,6 +4,85 @@ All notable changes to Degradation Mode Analysis are documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project adheres to [Semantic Versioning](http://semver.org/).
 
+## [Unreleased]
+
+## [2.1.0] - 2026-08-02
+
+### Added
+* Optional interpolation-ready silicon OCP output via
+  `'interpolationReadyOutput', true`. It collapses the PAV plateaus, keeping
+  both endpoints and dropping the interior, and resamples the result with
+  PCHIP onto a uniform, strictly increasing normalized-capacity grid. The
+  exported table has unique, strictly monotone capacity coordinates,
+  preserves the overall voltage support and represents plateau regions as
+  steep continuous ramps about one grid cell wide, where two plateaus inside
+  the same grid cell merge into a single ramp. It serves the same purpose as
+  the `strict_sto` export in PyDMA. It is meant for consumers that read the
+  table directly as a look-up table over capacity, such as PyBaMM, where it
+  prevents the voltage jump that several samples stacked on one capacity
+  coordinate would produce. It does not smooth the DVA of a q(U) consumer.
+* `regenerate_example_silicon_curves.m`: recipe script for the two bundled
+  silicon OCP example curves in `input_data/silicon/`. It documents the
+  settings each curve was made with, lithiation with `gammaSi` 0.2446 and
+  LOWESS filtering of both input curves, delithiation with `gammaSi` 0.23
+  and no filtering, PAV off in both directions, and reproduces the curves
+  from the bundled blend and graphite references.
+
+### Changed
+* The two bundled silicon OCP example curves in `input_data/silicon/` are
+  regenerated with the fixed generator, so example inputs, curves and
+  results are consistent again. The lithiation curve grows from 5584 to
+  5586 samples, the delithiation curve from 2333 to 2335. Against the
+  previously shipped curves the normalized capacity moves by a median of
+  3.4e-4, with up to 0.0325 (lithiation, at 0.077 V) and 0.0200
+  (delithiation, at 0.228 V) on the steep sections, measured on the union
+  of the native voltage samples of both curves. This is the effect of the
+  boundary-sampling fix below. The shipped lithiation curve could not
+  be reproduced from the bundled inputs at all, because the clean-up of the
+  graphite reference on 2025-12-18 removed one off-grid sample at
+  0.695265 V that the curve had been built with. That part of the change is
+  at most 6.16e-5 in normalized capacity.
+* The bundled example DMA results in `input_data/test_data/results/` are
+  re-fitted with the regenerated silicon curves, so `P45B_parameters.mat`,
+  the overall DMA figure and all nine per-CU figures (27 FIG/PDF/PNG files)
+  match the bundled inputs again. The fit is the documented minimal working example, `main_dma` with
+  its default settings, followed by `regenerate_param_figures`. Against the
+  previously shipped results the silicon fraction of the anode blend moves
+  by at most 0.0034 (rms 0.0020 over the nine check-ups), the degradation
+  modes by at most 0.016 (silicon LAM at CU7) and the full-range RMSE by at
+  most 0.00018 V, staying between 0.0039 V and 0.0064 V everywhere.
+
+### Fixed
+* `main_dma` stamps the framework version of this release, `2.1.0`, into
+  `data.meta.frameworkVersion` and `data.s.frameworkVersion` instead of the
+  previous `2.0.1`.
+* `generate_si_ocp` no longer loses part of the voltage support when two PAV
+  plateau levels sit closer together than the tie-breaking shift, which
+  happens next to the saturation boundary at q = 0 and q = 1. Previously the
+  two shifts crossed, the monotonicity sweep pushed the samples past the
+  capacity range and the clamp put them back onto the range boundary, where
+  they became exact ties. The deduplication in the interpolation-ready
+  output then dropped the tied samples together with their voltages and
+  truncated the exported curve while all assertions stayed green. The shift
+  is now bounded by a quarter of the distance to the neighbouring plateau
+  levels, a plateau on the range boundary is shifted inward only, and the
+  deduplication is gone. A residual tie is reported as an error instead.
+  Levels less than eight floating-point ulps apart are pooled into one
+  plateau rather than shifted apart, since at that distance the shift is no
+  longer representable, so the exported capacity can no longer step outside
+  the range of the input curve.
+* `generate_si_ocp` no longer fills out-of-support samples of the common
+  voltage grid with zero. The overlap window is now trimmed with exact
+  interpolated boundary samples, so the grid stays inside the aligned support
+  of both inputs. Previously the overlap was determined before trimming and
+  the old limits were sampled afterwards, which produced artificial
+  zero-capacity rows at the window edges that the `maskFlat` guard did not
+  catch.
+* `generate_si_ocp` no longer discards PAV plateaus with
+  `unique(..., 'stable')` when building the interpolation-ready output. That
+  kept only the first sample of each run and therefore lost the plateau's
+  voltage extent.
+
 ## [2.0.1] - 2026-05-18
 
 ### Added
@@ -58,4 +137,3 @@ and this project adheres to [Semantic Versioning](http://semver.org/).
 * Initial public release of Degradation Mode Analysis.
 * Core workflow for mode identification.
 * Command line interface and basic documentation.
-

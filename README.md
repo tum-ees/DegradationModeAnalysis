@@ -3,30 +3,13 @@
 
   Degradation mode analysis framework and tool to calculate silicon OCPs
 
-  <br>
-
-  <a href="https://www.mathworks.com/help/matlab/">
-    <img src="https://img.shields.io/badge/Platform-MATLAB-blue.svg" alt="MATLAB">
-  </a>
-
-  <a href="https://opensource.org/licenses/MIT">
-    <img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License">
-  </a>
-
-  <a href="https://doi.org/10.1016/j.jpowsour.2026.239418">
-    <img src="https://img.shields.io/badge/Paper-J.%20Power%20Sources-green.svg" alt="Journal of Power Sources">
-  </a>
-
-  <a href="https://doi.org/10.1039/D5EB00221D">
-    <img src="https://img.shields.io/badge/Paper-EES%20Batteries-green.svg" alt="EES Batteries">
-  </a>
-
-  <a href="https://doi.org/10.5281/zenodo.17591931">
-    <img src="https://zenodo.org/badge/DOI/10.5281/zenodo.17591931.svg" alt="DOI">
-  </a>
-
-  <br>
-  <br>
+  <p>
+    <a href="https://www.mathworks.com/help/matlab/"><img src="https://img.shields.io/badge/Platform-MATLAB-blue.svg" alt="MATLAB"></a>
+    <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-blue.svg" alt="MIT License"></a>
+    <a href="https://doi.org/10.1016/j.jpowsour.2026.239418"><img src="https://img.shields.io/badge/Paper-J.%20Power%20Sources-green.svg" alt="Journal of Power Sources"></a>
+    <a href="https://doi.org/10.1039/D5EB00221D"><img src="https://img.shields.io/badge/Paper-EES%20Batteries-green.svg" alt="EES Batteries"></a>
+    <a href="https://doi.org/10.5281/zenodo.17591931"><img src="https://img.shields.io/badge/DOI-10.5281%2Fzenodo.17591931-blue.svg" alt="DOI"></a>
+  </p>
 
   <img src="doc/OCP_shift_over_SOC.gif" width="550">
 </div>
@@ -64,6 +47,33 @@ and is robust even when <span style="font-style:italic;">gamma</span><sub>Si</su
 is only roughly estimated. Filtering of the generated curve is available if you want
 a strictly monotonic OCP. Use this only if you have a Si-Gr blend and want to avoid
 mismatches from literature silicon OCPs.
+
+For downstream interpolation routines that require unique, strictly increasing
+capacity coordinates, enable the interpolation-ready output together with PAV:
+
+```matlab
+silicon = generate_si_ocp( ...
+    'blendPath', blendPath, ...
+    'savePath', savePath, ...
+    'graphitePath', graphitePath, ...
+    'lithDirection', 'lithiation', ...
+    'gammaSi', 0.10, ...
+    'pavOutput', true, ...
+    'interpolationReadyOutput', true);
+```
+
+This optional mode uses shape-preserving PCHIP interpolation on a uniform
+1001-point normalized-capacity grid and is disabled by default.
+
+The default output changed in version 2.1.0. The aligned voltage window is
+now sampled with exact boundary points, instead of dropping the first grid
+sample and filling out-of-support samples with zero. This is an intentional
+bugfix, so existing workflows do not reproduce their earlier output
+bit-for-bit. Measured on the bundled P45B 0C03 example data with a silicon
+fraction of 0.245 and the Rehm2026 graphite reference, the reconstructed
+silicon curve is exported with two more samples (2238 to 2240 in lithiation
+and 2333 to 2335 in delithiation) and shifts by up to 0.003 (lithiation) and
+0.013 (delithiation) in normalized capacity.
 
 <h4>Degradation mode analysis</h4>
 Run the DMA by calling `[data, s] = main_dma(userSettingsOutside)`.
