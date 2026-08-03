@@ -57,9 +57,25 @@
 %  Returns
 %     siliconStruct.voltage            [V]
 %     siliconStruct.normalizedCapacity [0...1]
+%
+%  Optional second output, the graphite reference as it enters the
+%  reconstruction, interpolated onto the common voltage grid:
+%     graphiteStruct.voltage            [V]  (the common grid)
+%     graphiteStruct.normalizedCapacity [0...1]
+%     graphiteStruct.meta               source, direction, path, Vwindow
+%  meta.source names the built-in reference the graphite curve was resolved
+%  from, or 'custom' when 'graphitePath' was passed explicitly, because no
+%  built-in reference is involved then.
+%  With 'interpolationReadyOutput' true the silicon table is resampled onto
+%  the uniform 1001-point capacity grid while graphiteStruct stays on the
+%  common voltage grid, so the two outputs no longer share one grid.
+%
+%  Saving
+%     A non-empty 'savePath' writes both structs to that file. An empty
+%     'savePath' skips saving.
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
-function siliconStruct = generate_si_ocp(varargin)
+function [siliconStruct, graphiteStruct] = generate_si_ocp(varargin)
 
 %% 02 SETUP
 set(groot,'defaultAxesTickLabelInterpreter','latex')   % LaTeX ticks axis-wide
@@ -151,7 +167,7 @@ if ~contains(path, projRoot)
 end
 
 %% 04 GUI
-if strlength(blendPath)==0 || isnan(gammaSi) || strlength(savePath)==0
+if strlength(blendPath)==0 || isnan(gammaSi)
     d = dialog('Name','Generate Silicon Curve','Units','normalized', ...
                'Position',[0.30 0.38 0.50 0.46]);
 
@@ -261,7 +277,11 @@ if strlength(blendPath)==0 || isnan(gammaSi) || strlength(savePath)==0
 end
 
 %% 05 RESOLVE PATHS
-if strlength(graphitePath)==0
+% Remember whether the graphite file came from one of the built-in
+% references or straight from the caller, so the metadata does not claim a
+% source that was never used.
+graphiteFromSource = strlength(graphitePath)==0;
+if graphiteFromSource
     if strcmpi(graphiteSource,'Schmitt') && strcmpi(lithDirection,'delithiation')
         warning('Schmitt reference only exists for lithiation - switching to Rehm2026.');
         graphiteSource = "Rehm2026";
@@ -323,19 +343,27 @@ end
 siliconStruct.voltage            = outputVoltage;
 siliconStruct.normalizedCapacity = outputCapacity;
 
-%% 09 SAVE RESULT
-if strlength(savePath)==0
-    % NOTE: do not name this local variable `path` -- it shadows the
-    % MATLAB built-in `path()` used at line ~131 for the contains-check.
-    [file,pathSel] = uiputfile({'*.mat','MAT-files (*.mat)'}, ...
-                            'Save extracted Si curve as','SiCurve.mat');
-    if isequal(file,0); savePath=""; else; savePath=fullfile(pathSel,file); end
+% The graphite reference on the common grid, so callers can reuse the
+% aligned reconstruction basis instead of repeating the trimming and the
+% interpolation.
+graphiteStruct.voltage            = voltageCommon;
+graphiteStruct.normalizedCapacity = qGraphite;
+if graphiteFromSource
+    graphiteStruct.meta.source    = char(graphiteSource);
+else
+    graphiteStruct.meta.source    = 'custom';
 end
+graphiteStruct.meta.direction     = char(lithDirection);
+graphiteStruct.meta.path          = char(graphitePath);
+graphiteStruct.meta.Vwindow       = [voltageMin voltageMax];
+
+%% 09 SAVE RESULT
+% An empty savePath means: do not save.
 if strlength(savePath)>0
     if ~endsWith(savePath,'.mat','IgnoreCase',true)
         savePath = savePath + ".mat";
     end
-    save(savePath,'siliconStruct','-mat');
+    save(savePath,'siliconStruct','graphiteStruct','-mat');
 end
 
 %% 10 PLOT
