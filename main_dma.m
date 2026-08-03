@@ -53,7 +53,7 @@ function [data, s] = main_dma(userSettingsOutside)
 %% -------------- SETUP ALL USER SETTINGS IN STRUCT s --------------
 % Settings are overwritten if varargin contains a settings struct (see below)
 s = struct();
-frameworkVersion = '2.1.0';
+frameworkVersion = '2.1.1';
 s.frameworkVersion = frameworkVersion;
 
 % 1) Define path to your Aging Study (in case you use .mat table to store

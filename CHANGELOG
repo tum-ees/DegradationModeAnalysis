@@ -2,9 +2,38 @@
 All notable changes to Degradation Mode Analysis are documented in this file.
 
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
-and this project adheres to [Semantic Versioning](http://semver.org/).
+and this project loosely follows [Semantic Versioning](http://semver.org/).
 
 ## [Unreleased]
+
+## [2.1.1] - 2026-08-03
+
+### Added
+* `generate_si_ocp` returns an optional second output,
+  `[siliconStruct, graphiteStruct]`. It carries the graphite reference
+  interpolated onto the common voltage grid, together with a `meta` field
+  holding source, direction, file path and the aligned voltage window, so
+  callers can reuse the aligned reconstruction basis instead of repeating
+  the trimming and the interpolation. `meta.source` reports `custom` when
+  `'graphitePath'` was passed explicitly, because no built-in reference is
+  resolved in that case. With `'interpolationReadyOutput'` true the silicon
+  table is resampled onto the uniform 1001-point capacity grid while
+  `graphiteStruct` stays on the common voltage grid, so the two outputs no
+  longer share one grid. The returned silicon data are unchanged for
+  existing single-output calls. The save and dialog behaviour changes for
+  all calls, see below.
+
+### Changed
+* An empty `'savePath'` in `generate_si_ocp` now means "do not save"
+  instead of opening a save dialog, and it no longer forces the settings
+  dialog to appear. A non-empty `'savePath'` stores both output structs in
+  the file instead of the silicon curve alone. Scripts that relied on the
+  file dialog appearing when `'savePath'` was omitted have to pass the
+  target path explicitly.
+* `main_dma` stamps framework version `2.1.1`.
+
+### Internal
+* Corrected the repository URL in the clone instructions of `README.md`.
 
 ## [2.1.0] - 2026-08-02
 

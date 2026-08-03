@@ -28,7 +28,7 @@ from a measured blend OCP with the included silicon-OCP generation tool.
 Clone the repository by running
 
 ```bash
-git clone git@github.com:tum-ees/degradation-mode-analysis.git
+git clone git@github.com:tum-ees/DegradationModeAnalysis.git
 ```
 
 <h2>Usage</h2>
@@ -64,6 +64,13 @@ silicon = generate_si_ocp( ...
 
 This optional mode uses shape-preserving PCHIP interpolation on a uniform
 1001-point normalized-capacity grid and is disabled by default.
+
+An optional second output returns the graphite reference aligned onto the
+common voltage grid, together with meta information:
+
+```matlab
+[silicon, graphite] = generate_si_ocp( ... );
+```
 
 The default output changed in version 2.1.0. The aligned voltage window is
 now sampled with exact boundary points, instead of dropping the first grid
