@@ -4,7 +4,36 @@ All notable changes to Degradation Mode Analysis are documented in this file.
 The format is based on [Keep a Changelog](http://keepachangelog.com/)
 and this project loosely follows [Semantic Versioning](http://semver.org/).
 
-## [Unreleased]
+## [2.2.0] - 2026-09-01
+
+### Added
+* Optional constant resistance offset between the measured pOCV and the
+  reconstructed OCV (`s.allowResistanceOffset`, default off). A pOCV is
+  measured at a small but finite current, so it does not lie on the OCV;
+  switching this on adds one fitted resistance that moves the
+  reconstruction onto the measurement. The parameter vector grows to nine
+  slots, `[..., inhomCa, rOffset]`; vectors of length 4 to 8 are padded as
+  before, and with the offset off the fit reproduces the previous release
+  bit for bit. The sign follows `s.direction` (charge above, discharge
+  below), `s.pOCVCurrent` names the pOCV current, and the fitted value is
+  bounded capacity-normalised through `s.resistanceOffsetLimit` in Ohm*Ah,
+  so one limit gives cells of different size comparable voltage room.
+  `s.allowNegativeResistanceOffset` opens the lower half of the bound:
+  measured half-cell references carry their own polarisation, so a
+  negative net resistance is a legitimate outcome. The offset reaches only
+  the OCV objective; DVA and ICA are unchanged by construction, and a
+  warning is raised when it is enabled with `s.weightOCV = 0`, where it
+  would be undetermined. The per-check-up report prints the fitted value
+  and warns when it ends on a bound. New helpers
+  `resistance_offset_voltage` and `resistance_offset_bounds`; check suite
+  `tests/check_resistance_offset.m`, covering the parameter layout, the
+  helpers and an end-to-end fit through `dma_core` that recovers an
+  injected drop in both directions.
+* `data.<CU>.capaAct` is stored for every run, offset on or off, so an
+  analysis can rebuild the capacity-normalised bound per check-up.
+
+### Changed
+* `main_dma` stamps framework version `2.2.0`.
 
 ## [2.1.1] - 2026-08-03
 

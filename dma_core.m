@@ -67,7 +67,8 @@ function [solverInput, reconSOC, fullCellUModel, qDVAMeas, dvaSmoothMeas, ...
 %     - actual capacity from the input data (e.g., fullCellData).
 %   params
 %     - optimised parameters [alphaAn, betaAn, alphaCat, betaCat,
-%       (gammaAnBlend2), (gammaCaBlend2), (inhomAn), (inhomCat)].
+%       (gammaAnBlend2), (gammaCaBlend2), (inhomAn), (inhomCat),
+%       (rOffset)].
 %   algorithmOut
 %     - echo of the chosen algorithm.
 %   weightOCVOut
@@ -112,6 +113,50 @@ maxAnBlend2Loss         = settings.maxAnBlend2Loss;
 lowerBoundaries         = settings.lowerBoundaries;
 upperBoundaries         = settings.upperBoundaries;
 gammaAnBlend2UpperBound = settings.gammaAnBlend2UpperBound;
+
+% Optional constant resistance offset between the measured pOCV and the OCV.
+% Off unless asked for, so a settings struct that does not mention it fits
+% exactly as it did before the slot existed.
+if isfield(settings, 'allowResistanceOffset')
+    allowResistanceOffset = logical(settings.allowResistanceOffset);
+else
+    allowResistanceOffset = false;
+end
+if isfield(settings, 'pOCVCurrent')
+    rOffsetCurrent = abs(settings.pOCVCurrent);
+else
+    rOffsetCurrent = 0;
+end
+% Charge sits above the OCV and discharge below it, so the direction fixes
+% how a positive resistance moves the model. One number then means the same
+% thing in both directions. Read and validated only when the offset is on,
+% so a settings struct without the field keeps fitting exactly as it did
+% before the slot existed, and a misspelt direction cannot silently flip
+% the fitted sign.
+rOffsetSign = 1;
+if allowResistanceOffset
+    if ~isfield(settings, 'direction')
+        error('dmaCore:MissingDirection', ...
+            's.allowResistanceOffset is on but s.direction is not set.');
+    end
+    if strcmp(validatestring(settings.direction, ...
+            {'charge', 'discharge'}), 'discharge')
+        rOffsetSign = -1;
+    end
+end
+if allowResistanceOffset && ~(rOffsetCurrent > 0)
+    error('dmaCore:MissingPOCVCurrent', ...
+        ['s.allowResistanceOffset is on but s.pOCVCurrent is %g A. Without ' ...
+        'a current the resistance is not identifiable.'], rOffsetCurrent);
+end
+% The offset only ever reaches the OCV term: fit_dva and fit_ica never read
+% it. With the OCV weight at zero the objective is exactly flat in the
+% offset and the solver returns an arbitrary point inside its bounds.
+if allowResistanceOffset && weightOCV == 0
+    warning('dmaCore:OffsetWithoutOCV', ...
+        ['s.allowResistanceOffset is on but s.weightOCV is 0. The fit ' ...
+        'cannot determine the offset and its value is meaningless.']);
+end
 capaAct                 = halfAndFullCellData.capaAct;
 
 % Build per-electrode inhomogeneity limits upfront so the first CU can vary.
@@ -182,6 +227,8 @@ solverInput.useAnodeBlend        = useAnodeBlendModel;
 solverInput.inhomAnodeOffset     = inhomAnodeOffset;
 solverInput.inhomCathodeOffset   = inhomCathodeOffset;
 solverInput.q0                   = halfAndFullCellData.q0;
+solverInput.rOffsetCurrent       = rOffsetCurrent;
+solverInput.rOffsetSign          = rOffsetSign;
 
 % Precompute static masks and measured derivatives to avoid per-iteration recomputation
 dvaPrecomp.mask        = build_roi_mask(solverInput.qCell, roiDVAMin, roiDVAMax);
@@ -192,7 +239,7 @@ icaPrecomp.measuredICA = precompute_measured_ica(solverInput.qCell, solverInput.
 % -----------------------------------------------------------------------
 % 5) Define vectorized objective functions and run optimization
 % -----------------------------------------------------------------------
-% Sub-objectives (each must accept fixed-length 8 params, return [Nx1])
+% Sub-objectives (each must accept fixed-length 9 params, return [Nx1])
 funOCV = @(X) fit_ocv(X, solverInput, roiOCVMin, roiOCVMax);
 funDVA = @(X) fit_dva(X, solverInput, solverInput.q0, roiDVAMin, roiDVAMax, dvaPrecomp);
 funICA = @(X) fit_ica(X, solverInput, solverInput.q0, roiICAMin, roiICAMax, icaPrecomp);
@@ -261,15 +308,15 @@ inhomUB   = maxInhomUB .* inhomMask;       % [max max] or [max 0]
 inhomInit = min(inhomInit, inhomUB);      % clamp initial guess inside bounds
 
 % -----------------------------------------------------------------------
-% 7) Build full 8 parameter vectors, then reduce to active subset
+% 7) Build full 9 parameter vectors, then reduce to active subset
 % -----------------------------------------------------------------------
 % Full fixed order:
 % [alphaAn, betaAn, alphaCat, betaCat, gammaAnBlend2, gammaCaBlend2, ...
-% inhomAn, inhomCa];
+% inhomAn, inhomCa, rOffset];
 
-fullInit = zeros(1, 8);
-fullLB   = zeros(1, 8);
-fullUB   = zeros(1, 8);
+fullInit = zeros(1, 9);
+fullLB   = zeros(1, 9);
+fullUB   = zeros(1, 9);
 
 % Base 4 parameters always exist
 if useAnodeBlendModel
@@ -309,9 +356,23 @@ fullInit(7:8) = inhomInit;
 fullLB(7:8)   = inhomLB;
 fullUB(7:8)   = inhomUB;
 
+% Resistance offset slot, in Ohm, only free when asked for. The limit is
+% given per capacity, so it becomes a resistance only once the capacity of
+% this check-up is known, which is why the bound is built here and not above.
+if allowResistanceOffset
+    [rBounds, rInit] = resistance_offset_bounds(settings, capaAct);
+    fullInit(9) = rInit;
+    fullLB(9)   = rBounds(1);
+    fullUB(9)   = rBounds(2);
+else
+    fullInit(9) = 0;
+    fullLB(9)   = 0;
+    fullUB(9)   = 0;
+end
+
 % Active mask and reduced vectors for the solver
 activeMask = [true true true true useAnodeBlendModel useCathodeBlendModel ...
-    allowAnodeInhomogeneity allowCathodeInhomogeneity];
+    allowAnodeInhomogeneity allowCathodeInhomogeneity allowResistanceOffset];
 freeIdx = find(activeMask);
 
 initParams = fullInit(freeIdx);
@@ -376,7 +437,7 @@ switch algorithm
         error('Invalid solver chosen');
 end
 
-% Expand to fixed full length 8 for output and reconstruction
+% Expand to fixed full length 9 for output and reconstruction
 params = expandParamsFixed(params);
 
 % -----------------------------------------------------------------------
@@ -390,6 +451,7 @@ gammaAnBlend2 = params(5);
 gammaCaBlend2 = params(6);
 inhomValAn    = params(7);
 inhomValCa    = params(8);
+rOffset       = params(9);
 
 % Compute anode curve; split between blend and non-blend paths
 if solverInput.useAnodeBlend && ~isempty(solverInput.qAnodeBlend1Interp)
@@ -426,7 +488,10 @@ cathodeURecon = cathUSrc;
 reconSOC = linspace(0, 1, dataLength);
 anodeUModel = interp1(anodeSOC, anodeURecon, reconSOC, 'linear', 0);
 cathodeUModel = interp1(cathodeSOC, cathodeURecon, reconSOC, 'linear', 0);
-fullCellUModel = cathodeUModel - anodeUModel;
+% Same lift as in fit_ocv, so what is plotted and what the RMSE is taken on
+% is the curve the objective was actually minimised against.
+fullCellUModel = cathodeUModel - anodeUModel + ...
+    resistance_offset_voltage(rOffset, solverInput);
 
 % Compute measured vs. calculated DVA
 [qDVAMeas, ~, dvaMeas]  = ...
@@ -550,7 +615,7 @@ weightOCVOut = weightOCV;
 
 % -----------------------------------------------------------------------
 % Nested function: local_expand_params_fixed
-%   Expands free parameter vectors to full length 8 fixed order
+%   Expands free parameter vectors to full length 9 fixed order
 % -----------------------------------------------------------------------
     function Xfull = local_expand_params_fixed(Xfree, freeIdxLoc)
 
@@ -558,7 +623,7 @@ weightOCVOut = weightOCV;
             Xfree = Xfree(:).';
         end
 
-        Xfull = zeros(size(Xfree, 1), 8);
+        Xfull = zeros(size(Xfree, 1), 9);
         Xfull(:, freeIdxLoc) = Xfree;
     end
 

@@ -53,7 +53,7 @@ function [data, s] = main_dma(userSettingsOutside)
 %% -------------- SETUP ALL USER SETTINGS IN STRUCT s --------------
 % Settings are overwritten if varargin contains a settings struct (see below)
 s = struct();
-frameworkVersion = '2.1.1';
+frameworkVersion = '2.2.0';
 s.frameworkVersion = frameworkVersion;
 
 % 1) Define path to your Aging Study (in case you use .mat table to store
@@ -198,7 +198,40 @@ s.roiOCVMax = 1;
 s.lowerBoundaries          = [1, -1.0, 1, -1.0];
 s.upperBoundaries          = [2.0,  0, 2.1,  0];
 
-% 13) Define whether your anode is blend material (e.g. silicon-graphite) -> 
+% 13) Optional: constant resistance offset between the pOCV and the OCV.
+% A pOCV is measured at a small but finite current, so it does not lie on
+% the OCV: in charge the terminal voltage sits above it by the ohmic drop,
+% in discharge below it. Switching this on adds one fitted resistance, in
+% Ohm, that moves the reconstruction onto the measurement. It changes the
+% level and nothing else, so the DVA and ICA objectives differentiate it
+% away and it can only earn its place on the OCV term.
+%
+% The sign convention follows s.direction, so one number means the same
+% thing in both directions.
+s.allowResistanceOffset = false;   % default off
+% Magnitude of the pOCV current in A. Needed only when the offset is on, and
+% the resistance is not identifiable without it. For a CC pOCV this is the
+% C-rate times the nominal capacity. There is no usable default: a silently
+% wrong current rescales the fitted resistance without a trace, so the
+% offset refuses to run until this is set.
+s.pOCVCurrent           = NaN;
+% How far the offset may go, as a capacity-normalised resistance in Ohm*Ah.
+% Not in Ohm: a bare resistance is not comparable between cells of different
+% size, because the check-up current scales with the capacity, so one number
+% in Ohm would hand a small cell less room in volts than a large one.
+% Normalised, the reachable voltage is the limit times the C-rate, so one
+% number gives every cell in a study the same room. At C/25, 0.25 Ohm*Ah is
+% 10 mV.
+s.resistanceOffsetLimit = 0.25;
+% A pOCV lies above the OCV in charge and below it in discharge, so a
+% positive resistance is the physical case and the only one allowed by
+% default. Half-cell references are pseudo-OCPs measured at a finite rate as
+% well and carry their own drop into the reconstruction; where that exceeds
+% the drop in the full-cell measurement the net resistance is negative, and
+% this has to be switched on for the fit to be able to reach it.
+s.allowNegativeResistanceOffset = false;
+
+% 14) Define whether your anode is blend material (e.g. silicon-graphite) -> 
 % set to true in this case. Assure that gammaAnBlend2UpperBound is not lower
 % than actual capacity share!
 s.useAnodeBlend            = true;  % Turn on anode blend-electrode model by default
@@ -210,7 +243,7 @@ s.useCathodeBlend          = false;
 s.gammaCaBlend2Init        = 0.5;   % initial guess for cathode blend2 share
 s.gammaCaBlend2UpperBound  = 1.0;   % example upper bound if cathode blend2 exists
 
-% 14) Decide, whether to model inhomogeneity or not. Default is false.
+% 15) Decide, whether to model inhomogeneity or not. Default is false.
 % Setting to include or exclude inhomogeneity in the modeling.
 % Do not use cathodeInhomogeneity for LFP cells!
 s.allowAnodeInhomogeneity   = true;
@@ -225,20 +258,20 @@ s.maxInhomogeneityDelta     = 0.1;
 s.inhomAnodeOffset          = 0;
 s.inhomCathodeOffset        = 0;
 
-% 15) Decide whether negative LAM per electrode or blend is allowed.
+% 16) Decide whether negative LAM per electrode or blend is allowed.
 % The user can allow some small negative anode/cathode loss (gain). 
 s.maxCathodeGain   = 0.010; % e.g. 0.01 -> allows 1% cathode gain per CU
 s.maxAnodeGain     = 0.010; % e.g. 0.01 -> allows 1% anode gain per CU
 s.maxAnBlend1Gain  = 0.005; % e.g. 0.005 -> allows 0.5% anode Blend1 gain per CU
 s.maxAnBlend2Gain  = 0.010; % e.g. 0.01 -> allows 1% anode Blend2 gain per CU
 
-% 16) Define maximal losses per CU (default 1.0 -> 100 % allowed per CU)
+% 17) Define maximal losses per CU (default 1.0 -> 100 % allowed per CU)
 s.maxCathodeLoss   = 1; % e.g. 0.5 -> limit cathode loss to 50% per CU
 s.maxAnodeLoss     = 1; % e.g. 0.8 -> limit anode loss to 80% per CU
 s.maxAnBlend1Loss  = 1; % e.g. 0.6 -> limit anode Blend1 loss to 60% per CU
 s.maxAnBlend2Loss  = 1; % e.g. 0.6 -> limit anode Blend2 loss to 60% per CU
 
-% 17) Decide, which figures should be plotted:
+% 18) Decide, which figures should be plotted:
 % plots a figure showing both electrodes and the corresponding DV including
 % their scaling and shifting parameters
 s.cellName              = 'P45B';   % cell name for plot titles
@@ -256,7 +289,7 @@ s.labelChargeCarrierInv = 'Charge-carrier-inv'; % inventory; e.g. Li-inventory
 % Show cathode curve in DMA plot (hide only for LFP, where cathode aging is not meaningful)
 s.plotCathodeInDMA      = true;
 
-% 18) Adjust path for both anode and cathode (see the next 15-20 lines);
+% 19) Adjust path for both anode and cathode (see the next 15-20 lines);
 % then you are done.
 
 %% -------------- LOAD anode and cathode data --------------
@@ -457,6 +490,40 @@ for i = idxRange
 
         fprintf('%s -> Try #%d: rmseFitRegion = %.4f V | rmseFullRange = %.4f V\n', ...
             fieldName, totalTries, rmseFitRegion, rmseFullRange);
+
+        if s.allowResistanceOffset
+            rBounds = resistance_offset_bounds(s, capaAct);
+            fprintf(['    R offset = %.1f mOhm = %.3f Ohm*Ah -> %.2f mV ' ...
+                'at %.4f A\n'], 1e3 * params(9), params(9) * capaAct, ...
+                1e3 * params(9) * abs(s.pOCVCurrent), abs(s.pOCVCurrent));
+            % A fit that runs into a bound is no longer reporting a
+            % resistance. Which bound it hits tells two different stories,
+            % so the messages are separate.
+            rTol = 1e-3 * (rBounds(2) - rBounds(1));
+            if abs(params(9) - rBounds(2)) < rTol
+                warning('mainDma:ResistanceOffsetAtBound', ...
+                    ['%s try #%d: the resistance offset sits on its upper ' ...
+                    'bound of %.1f mOhm; it wanted a larger shift than the ' ...
+                    'bound allows. Treat it as a level correction, not as ' ...
+                    'a resistance.'], fieldName, totalTries, 1e3 * rBounds(2));
+            elseif abs(params(9) - rBounds(1)) < rTol
+                if rBounds(1) == 0
+                    warning('mainDma:ResistanceOffsetAtBound', ...
+                        ['%s try #%d: the resistance offset sits at zero, ' ...
+                        'its lower bound. Either no offset is needed, or ' ...
+                        'the fit wants a negative one; consider ' ...
+                        's.allowNegativeResistanceOffset.'], ...
+                        fieldName, totalTries);
+                else
+                    warning('mainDma:ResistanceOffsetAtBound', ...
+                        ['%s try #%d: the resistance offset sits on its ' ...
+                        'lower bound of %.1f mOhm; it wanted a more ' ...
+                        'negative shift than the bound allows. Treat it ' ...
+                        'as a level correction, not as a resistance.'], ...
+                        fieldName, totalTries, 1e3 * rBounds(1));
+                end
+            end
+        end
 
         % Package solution attempt for later evaluation / storage
         candidateSol = store_solution_struct( ...
