@@ -6,7 +6,8 @@ function diffOCV = fit_ocv(X, solverInput, roiOCVMin, roiOCVMax)
 %> Date: 2025-03-11
 %
 % x is optimized parameters with fixed length
-% [alphaAn, betaAn, alphaCat, betaCat, gammaAnBlend2, gammaCaBlend2, inhomAn, inhomCa]
+% [alphaAn, betaAn, alphaCat, betaCat, gammaAnBlend2, gammaCaBlend2, inhomAn,
+%  inhomCa, rOffset]
 %
 % This function
 %   1) Calculates the blended cell OCV based on the given parameters x
@@ -61,6 +62,7 @@ gammaAnBlend2 = X(5);
 gammaCaBlend2 = X(6);
 inhomMagAn    = X(7);
 inhomMagCa    = X(8);
+rOffset       = X(9);
 
 % 5) Prepare anode source curve; split between blend and non-blend paths
 if solverInput.useAnodeBlend && ~isempty(solverInput.qAnodeBlend1Interp)
@@ -94,8 +96,13 @@ end
 cathPot = interp1(alphaCat * cathodeSOCSrc + betaCat, ...
                   cathUSrc, Q, 'linear', 0);
 
-% 8) Full cell OCV
-ocvCalc = cathPot - anodePot;
+% 8) Full cell OCV, lifted onto the measured pOCV by the ohmic drop.
+% The term is a constant over the curve, so it moves the level without
+% touching the shape. That is deliberate: fit_dva and fit_ica never read
+% the offset slot, and even where a DVA is derived from the lifted curve a
+% constant vanishes under the derivative, so the offset can only earn its
+% place on the OCV term.
+ocvCalc = cathPot - anodePot + resistance_offset_voltage(rOffset, solverInput);
 
 % 9) Compare to measured OCV within ROI
 ocvErrors = (ocvCalc(:) - solverInput.ocvCell).^2;

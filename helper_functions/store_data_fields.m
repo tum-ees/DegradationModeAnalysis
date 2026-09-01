@@ -23,6 +23,10 @@ function data = store_data_fields(data, fName, solution, lamAnode, lamCathode, l
 %   data               - updated aggregate DMA output struct
 
     data.(fName).params                   = solution.params;
+    % The active capacity of this check-up. Every degradation mode is
+    % relative to it, and the resistance offset is bounded per capacity, so
+    % without it a stored result cannot be read back and checked.
+    data.(fName).capaAct                  = solution.capaAct;
     data.(fName).measured.soc             = solution.solverInput.qCell;
     data.(fName).measured.voltage         = solution.solverInput.ocvCell;
     data.(fName).measured.qDVA            = solution.qDVAMeas;

@@ -6,7 +6,10 @@ function diffDVA = fit_dva(X, solverInput, q0, roiDVAMin, roiDVAMax, precompDVA)
 %> Date: 2025-03-11
 %
 % x is optimized parameters with fixed length
-% [alphaAn, betaAn, alphaCat, betaCat, gammaAnBlend2, gammaCaBlend2, inhomAn, inhomCa]
+% [alphaAn, betaAn, alphaCat, betaCat, gammaAnBlend2, gammaCaBlend2,
+%  inhomAn, inhomCa, rOffset]
+% rOffset is not read here: a constant voltage offset has no derivative, so
+% the DVA is the same with and without it.
 %
 % This function
 %   1) Builds the anode curve based on gammaAnBlend2

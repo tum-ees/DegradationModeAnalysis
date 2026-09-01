@@ -5,7 +5,10 @@ function diffICA = fit_ica(X, solverInput, q0, roiICAMin, roiICAMax, precompICA)
 %> Date: 2025-05-19
 %
 % x is optimized parameters with fixed length
-% [alphaAn, betaAn, alphaCat, betaCat, gammaAnBlend2, gammaCaBlend2, inhomAn, inhomCa]
+% [alphaAn, betaAn, alphaCat, betaCat, gammaAnBlend2, gammaCaBlend2,
+%  inhomAn, inhomCa, rOffset]
+% rOffset is not read here: a constant voltage offset shifts every point of
+% the curve alike, so the ICA is the same with and without it.
 %
 % This function
 %   1) Builds the anode curve based on gammaAnBlend2
